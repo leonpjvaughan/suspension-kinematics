@@ -19,6 +19,7 @@ sketch, it says so and gives the reason; [`decisions.md`](decisions.md) records 
 | [`wasm.md`](wasm.md) | the compiled kernel: what a generated kernel is mathematically, how sympy becomes Rust becomes WebAssembly, and how the book consumes it |
 | [`naming.md`](naming.md) | the name, the module layout, the verbs, and the engine boundary every front end speaks |
 | [`ui.md`](ui.md) | the config UI: what it edits, what it shows, and where Rust fits (a window, not an engine) |
+| [`security.md`](security.md) | branch, tag, interaction and Actions protection, and what expires |
 | [`follow-ups.md`](follow-ups.md) | work that is agreed and deliberately not done yet, with what would make each item done |
 | [`decisions.md`](decisions.md) | every decision, its resolution, and the reasoning behind the ones that needed it |
 
