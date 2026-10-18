@@ -1,0 +1,20 @@
+version: 2
+# Weekly, grouped, and quiet: a dependency bump arrives as one pull request per ecosystem,
+# which the branch rules require to pass the same checks as any other change.
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
