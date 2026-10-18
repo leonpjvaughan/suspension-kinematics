@@ -1,0 +1,36 @@
+id: ride-height
+constraints: ../constraints.yaml
+
+# The same corner with the car held still and the road driven: the chassis is inertial and
+# the floor is a body on a vertical slide, touching the tyre through one `plane-gap` row.
+bodies:
+  chassis: {fixed: true, points: [lcaf, lcar, ucaf, ucar, tri]}
+  lca: {points: []}
+  uca: {points: []}
+  up: {points: [lbj, ubj, wc, wco, tro]}
+  road: {points: [road-origin, patch]}
+
+roles: {reference: chassis, road: road, axle: [wc, wco]}
+
+sites:
+  lca-hinge: {origin: lcaf, z: lca-axis}
+  uca-hinge: {origin: ucaf, z: uca-axis}
+  lbj: {origin: lbj}
+  ubj: {origin: ubj}
+  tri: {origin: tri}
+  tro: {origin: tro}
+  wc: {origin: wc}
+  road-slide: {origin: road-origin, z: up}
+  patch: {origin: patch, z: up}
+
+joints:
+  - {name: lca-chassis, kind: revolute, a: chassis, b: lca, site: lca-hinge}
+  - {name: uca-chassis, kind: revolute, a: chassis, b: uca, site: uca-hinge}
+  - {name: lca-up, kind: spherical, a: lca, b: up, site: lbj}
+  - {name: uca-up, kind: spherical, a: uca, b: up, site: ubj}
+  - {name: tie-rod, kind: distance, a: chassis, b: up, from: tri, to: tro}
+  - {name: road-chassis, kind: prismatic, a: chassis, b: road, site: road-slide}
+  - {name: contact, kind: plane-gap, a: road, b: up, from: patch, to: wc}
+
+actuators:
+  - {name: road-height, joint: road-chassis, dof: tz, effort: position}

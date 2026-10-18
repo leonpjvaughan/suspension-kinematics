@@ -1,0 +1,33 @@
+id: dw-two-leg
+constraints: ../constraints.yaml
+
+# The book's §2: the upper wishbone as two legs, so the model is redundant by one.
+# The driven joint is the same as §1's, so the two camber curves are directly comparable.
+bodies:
+  ground: {fixed: true, points: [lcaf, lcar, ucaf, ucar, tri]}
+  lca: {points: []}
+  uca: {points: []}
+  up: {points: [lbj, ubj, wc, wco, tro]}
+
+roles: {axle: [wc, wco]}
+
+sites:
+  lca-hinge: {origin: lcaf, z: lca-axis}
+  ucaf: {origin: ucaf}
+  ucar: {origin: ucar}
+  lbj: {origin: lbj}
+  ubj: {origin: ubj}
+  tri: {origin: tri}
+  tro: {origin: tro}
+
+joints:
+  - {name: lca-ground, kind: revolute, a: ground, b: lca, site: lca-hinge}
+  # two sphericals pin two points of one rigid body: six rows, five independent
+  - {name: uca-front, kind: spherical, a: ground, b: uca, site: ucaf}
+  - {name: uca-rear, kind: spherical, a: ground, b: uca, site: ucar}
+  - {name: lca-up, kind: spherical, a: lca, b: up, site: lbj}
+  - {name: uca-up, kind: spherical, a: uca, b: up, site: ubj}
+  - {name: tie-rod, kind: distance, a: ground, b: up, from: tri, to: tro}
+
+actuators:
+  - {name: lca-drive, joint: lca-ground, dof: rz, effort: position}

@@ -1,0 +1,29 @@
+id: dw-1dof
+constraints: ../constraints.yaml
+
+# The book's §1: the wishbone as one rigid body per arm, one degree of freedom.
+bodies:
+  ground: {fixed: true, points: [lcaf, lcar, ucaf, ucar, tri]}
+  lca: {points: []}
+  uca: {points: []}
+  up: {points: [lbj, ubj, wc, wco, tro]}
+
+roles: {axle: [wc, wco]}
+
+sites:
+  lca-hinge: {origin: lcaf, z: lca-axis}
+  uca-hinge: {origin: ucaf, z: uca-axis}
+  lbj: {origin: lbj}
+  ubj: {origin: ubj}
+  tri: {origin: tri}
+  tro: {origin: tro}
+
+joints:
+  - {name: lca-ground, kind: revolute, a: ground, b: lca, site: lca-hinge}
+  - {name: uca-ground, kind: revolute, a: ground, b: uca, site: uca-hinge}
+  - {name: lca-up, kind: spherical, a: lca, b: up, site: lbj}
+  - {name: uca-up, kind: spherical, a: uca, b: up, site: ubj}
+  - {name: tie-rod, kind: distance, a: ground, b: up, from: tri, to: tro}
+
+actuators:
+  - {name: lca-drive, joint: lca-ground, dof: rz, effort: position}

@@ -1,0 +1,11 @@
+analysis: kinematics
+
+drivers:
+  - actuator: lca-drive
+    law: {kind: linear, from: -0.1, to: 0.1, steps: 81}
+
+# A corner carries load; a bush only deflects under one. Without these the compliant
+# model would be the rigid one at every stiffness (docs/decisions.md §3).
+loads:
+  - {site: wc, force: [0, 0, -3500], law: {kind: constant}}
+  - {site: wc, force: [1800, 0, 0], law: {kind: constant}}

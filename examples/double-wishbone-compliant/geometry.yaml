@@ -1,0 +1,23 @@
+# §1's numbers, with one compliance. The tie rod is compliant along its length.
+points:
+  lcaf: [0.300, 0.120, 0.150]
+  lcar: [0.300, -0.120, 0.160]
+  lbj: [0.720, 0.010, 0.150]
+  ucaf: [0.380, 0.100, 0.480]
+  ucar: [0.380, -0.100, 0.470]
+  ubj: [0.680, 0.000, 0.520]
+  wc: [0.760, 0.000, 0.320]
+  wco: [0.860, 0.000, 0.320]
+  tri: [0.330, 0.140, 0.300]
+  tro: [0.700, 0.120, 0.310]
+
+axes:
+  lca-axis: [0.000000000, -0.999133073, 0.041630545]
+  uca-axis: [0.000000000, -0.998752339, -0.049937617]
+
+joints:
+  tie-rod:
+    compliance: {length: 1.0e-6}   # m/N, i.e. a 1 kN/mm tie rod
+
+scalars:
+  tyre-radius: 0.200

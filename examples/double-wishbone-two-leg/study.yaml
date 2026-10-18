@@ -1,0 +1,5 @@
+analysis: kinematics
+
+drivers:
+  - actuator: lca-drive
+    law: {kind: linear, from: -0.10, to: 0.10, steps: 81}

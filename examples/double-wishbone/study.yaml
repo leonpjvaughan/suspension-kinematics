@@ -1,0 +1,8 @@
+# ±0.10 rad of lower-arm rotation is ±42 mm of wheel-centre travel (a 0.42 m arm, amplified a
+# little by the upright). The handoff's ±0.35 rad assumed a 0.2 m arm; with this geometry it
+# would be a 290 mm sweep. See docs/config-layer.md §10.
+analysis: kinematics
+
+drivers:
+  - actuator: lca-drive
+    law: {kind: linear, from: -0.10, to: 0.10, steps: 81}
