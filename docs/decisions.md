@@ -429,3 +429,22 @@ like, and the rest is now an explicit follow-up list in [`follow-ups.md`](follow
    The bug was invisible while full steps were always accepted.
 4. **A compliant model is still refused**, with the reason, rather than emitted. That is the last
    remaining solver.
+
+---
+
+## Round 13: roundoff is reported as a bound (accepted)
+
+The first CI run failed the "emitted data is committed and stable" check, and it was right to.
+`agreement.max_abs_diff` came out `1.02e-13` locally and `1.34e-13` on the runner, and the
+compliant model's iterate trace differed in its last digits. Those digits are a property of the
+BLAS and the scalar library, not of the model: at roundoff, a number is a *bound*, not a
+measurement.
+
+- The agreement is now rounded to **one significant figure** — "they agree to 1e-13" is the claim
+  a panel should print, and its second digit means nothing. This supersedes `HANDOFF.md` §7's
+  "three significant figures", which assumed a platform-stable value.
+- The iterate trace is rounded to four significant figures for residuals and six for singular
+  values, with residuals below `1e-15` reported as zero — a residual of `1e-20 m` is zero, and
+  printing it only exposes the platform.
+- The converged data — poses, metrics, camber to four decimal places — was never affected; the
+  diff in CI showed no frame changed.

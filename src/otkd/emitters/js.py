@@ -9,6 +9,7 @@ clock, so a rerun is byte-identical and reviewable in a diff.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from .. import __version__
@@ -16,12 +17,32 @@ from ..solvers.sweep import Sweep
 
 LENGTH_DP = 6
 ANGLE_DP = 4
-RESIDUAL_DP = 10
+#: The residual trace and the agreement are roundoff-level quantities: their low digits are a
+#: property of the BLAS and the scalar library, not of the model. They are reported to
+#: significant figures, and the agreement to *one* — it is a bound ("they agree to 1e-13"), not
+#: a measurement whose second digit means anything.
+RESIDUAL_FIGURES = 4
+SINGULAR_FIGURES = 6
+AGREEMENT_FIGURES = 1
 
 
 def _r(value: float, dp: int) -> float:
     rounded = round(float(value), dp)
     return 0.0 if rounded == 0 else rounded
+
+
+def _sig(value: float, figures: int, *, floor: float = 0.0) -> float:
+    """Round to significant figures, which is what a roundoff-level number deserves.
+
+    `floor` reports anything below it as zero: a residual of 1e-20 m is zero, and printing it
+    would only expose the platform's rounding.
+    """
+    number = float(value)
+    if number == 0.0 or math.isnan(number) or math.isinf(number):
+        return 0.0 if number == 0.0 else number
+    if abs(number) < floor:
+        return 0.0
+    return float(f"{number:.{figures - 1}e}")
 
 
 def _point(point, dp: int = LENGTH_DP) -> list[float]:
@@ -61,7 +82,7 @@ def payload(sweep: Sweep) -> dict:
         agreement = {
             "analytic": [_r(value, ANGLE_DP) for value in sweep.analytic],
             "numeric": [_r(frame.outputs.camber, ANGLE_DP) for frame in sweep.frames],
-            "max_abs_diff": float(f"{sweep.agreement:.3g}") if sweep.agreement is not None else None,
+            "max_abs_diff": _sig(sweep.agreement, AGREEMENT_FIGURES) if sweep.agreement is not None else None,
         }
 
     return {
@@ -112,8 +133,8 @@ def _iterations(sweep: Sweep, index: int) -> list[dict]:
         out.append(
             {
                 "k": k,
-                "residual": [_r(v, RESIDUAL_DP) for v in residual],
-                "singular_values": [_r(v, RESIDUAL_DP) for v in values],
+                "residual": [_sig(v, RESIDUAL_FIGURES, floor=1e-15) for v in residual],
+                "singular_values": [_sig(v, SINGULAR_FIGURES) for v in values],
             }
         )
     return out
