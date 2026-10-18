@@ -41,6 +41,11 @@ version-file = "src/otkd/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/otkd"]
 
+# Build output must never enter the sdist: a build that writes into `dist/` would otherwise
+# package its own previous output, making the second build differ from the first.
+[tool.hatch.build.targets.sdist]
+exclude = ["/dist*", "/.venv", "/.pytest_cache", "/build"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
