@@ -11,7 +11,8 @@ repository settings are not in the tree and would otherwise be folklore.
 | `dev` | no force push, no deletion; direct pushes allowed, because that is where work happens |
 
 Squash merging only: the pull request title becomes the commit subject, which is what the version
-calculation reads. Merge and rebase merges are disabled; the source branch is deleted on merge.
+calculation reads. Merge and rebase merges are disabled. Branches are **kept** on merge, because
+`dev` is long-lived rather than one branch per change.
 
 The release workflow pushes a **tag**, never a commit, so branch protection does not obstruct it.
 Tag creation is allowed; deletion and update are not (see below).
