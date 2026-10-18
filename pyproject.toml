@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "otkd"
+# One source of truth: `src/otkd/__init__.py`. PEP 440, no `v` prefix.
+dynamic = ["version"]
+description = "Open textbook kinematics and dynamics: config files in, mathematical problems out."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "sympy>=1.12",
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "packaging>=24"]
+
+[project.optional-dependencies]
+ui = ["ruamel.yaml>=0.18"]
+
+[project.scripts]
+otkd = "otkd.cli:main"
+
+# The tag is the version. `hatch-vcs` is hatchling's wrapper around setuptools-scm: no version
+# is written by hand anywhere, and a tag is the only thing that changes it.
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+fallback_version = "0.0.0"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/otkd/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/otkd"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
