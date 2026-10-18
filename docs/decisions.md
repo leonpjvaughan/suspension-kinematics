@@ -413,3 +413,19 @@ like, and the rest is now an explicit follow-up list in [`follow-ups.md`](follow
    library.
 5. **The book-chapter proposals are gone from `docs/`.** They were copied to the book repository;
    this tree holds the package's design record only.
+
+---
+
+## Round 12: least squares in the kernel (accepted)
+
+1. **The emitter chooses a solver from the classification**, not from a flag: damped Newton for a
+   square model, Levenberg–Marquardt on the normal equations for a redundant one, and a refusal
+   naming the gap for a compliant one. `kernel.json` records `solver`.
+2. **The Jacobian layout was fixed for non-square systems.** The generator had iterated the
+   Jacobian as if every model were square; it now writes row-major `jac[row*N + col]`, which is
+   the same layout for a square model and the only correct one for a redundant model.
+3. **The Newton step no longer clobbers its linearisation.** A rejected trial used to overwrite
+   the residual and Jacobian of the accepted iterate; rejected trials now use their own buffers.
+   The bug was invisible while full steps were always accepted.
+4. **A compliant model is still refused**, with the reason, rather than emitted. That is the last
+   remaining solver.

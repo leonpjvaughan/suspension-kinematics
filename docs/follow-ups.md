@@ -10,18 +10,7 @@ The kernel currently compiles the square Newton path. The emitter *refuses* a re
 compliant model with a message rather than emitting a solver for the wrong equations, so the
 gap is loud. Three increments close it, in this order.
 
-### 1. Least squares for redundant models
-
-**What.** Emit a redundancy-aware solver: `(JᵀJ + λI) δ = −Jᵀr` with a trust-region-style
-adaptation of `λ`, using the existing LU. This is what §2 of the book needs in a browser.
-
-**Why deferred.** The chapter's §2/§3 figures step through *iterates* and show an SVD; a
-precomputed payload is the better artefact for that, so this is a capability rather than a need.
-
-**Done when.** The two-leg model's kernel matches the Python least-squares solution to `1e-9`
-on every frame, and the residual floor is reported the same way.
-
-### 2. SVD and the compliant equilibrium
+### 1. SVD and the compliant equilibrium
 
 **What.** A Jacobi or Householder SVD for singular values and the null space, then the
 equilibrium root find of §4 in the kernel. This is the interactive stiffness slider.
@@ -57,6 +46,9 @@ it.
 
 ## Done
 
+- **Kernel least squares** (`solver: "redundant"` in `kernel.json`): Levenberg–Marquardt on the
+  normal equations, selected by the model's own classification. It agrees with Python's least
+  squares to `1e-15` on the pose and `1e-13` on the metrics.
 - **Kernel metrics** (`abi: otkd-kernel-2`): camber, toe, track, contact patch, instant centre
   and roll centre are computed in the kernel and agree with `analysis/outputs.py` to `1e-9` at
   every tested drive value. A page no longer computes any kinematics itself.

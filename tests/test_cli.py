@@ -73,8 +73,8 @@ def test_compile_latex_uses_readable_names(tmp_path):
 
 
 def test_emit_wasm_refuses_a_model_it_cannot_solve(tmp_path):
-    root = build(tmp_path, "double-wishbone-two-leg")
+    root = build(tmp_path, "double-wishbone-compliant")
     result = run("emit", str(root), str(tmp_path / "kernel"), "--format", "wasm", "--quiet")
     assert result.returncode == 1
-    assert "square models only" in result.stderr
+    assert "equilibrium" in result.stderr
     assert "Traceback" not in result.stderr

@@ -48,7 +48,7 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
     the ABI, and `provenance.json` plus `source/` record exactly which four files produced it.
     """
     problem = Problem(model)
-    _require_square(problem)
+    kind = _supported_kind(problem)
     target = Path(out_dir)
     target.mkdir(parents=True, exist_ok=True)
 
@@ -79,7 +79,7 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
         offset += size
     layout = Layout(sizes=layout.sizes, offsets=offsets, total=offset)
 
-    source = _rust_source(problem, model, layout, points, axes, numbers)
+    source = _rust_source(problem, model, layout, points, axes, numbers, kind)
     (target / "kernel.rs").write_text(source)
 
     wasm_path = None
@@ -90,6 +90,7 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
     manifest = {
         "model": model.topology.id,
         "abi": "otkd-kernel-2",
+        "solver": kind,
         "layout": layout.as_dict(),
         "metrics": ["camber", "toe", "track", "contact", "ic", "rc"],
         "points": points,
@@ -111,26 +112,23 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
     return {"dir": str(target), "wasm": str(wasm_path) if wasm_path else None, "note": note}
 
 
-def _require_square(problem: Problem) -> None:
-    """Refuse a model whose problem the generated solver cannot solve.
+def _supported_kind(problem: Problem) -> str:
+    """The solver the kernel will carry, or refuse.
 
-    The kernel carries one solver: damped Newton on a square system. A redundant model needs
-    least squares and a compliant one needs the equilibrium root-find, and emitting a kernel
-    for either would produce code that solves the wrong problem — worse than refusing. See
-    docs/wasm.md §7.
+    Two are compiled: damped Newton for a square system, and Levenberg–Marquardt for a redundant
+    one. A compliant model needs the equilibrium root-find, which is not compiled yet; emitting a
+    kernel that solved the wrong equations would be worse than refusing. See docs/wasm.md §7.
     """
     from ..solvers.system import System
 
-    system = System(problem, problem.numbers(), problem.theta0())
-    kind = system.classify()
-    if kind == "square":
-        return
+    kind = System(problem, problem.numbers(), problem.theta0()).classify()
+    if kind in ("square", "redundant"):
+        return kind
     hint = {
-        "redundant": "drop a dependent row in the study, or solve it in Python (least squares is not compiled yet)",
         "equilibrium": "a compliant model needs the equilibrium root-find, which is not compiled yet",
         "under": "the model is under-determined, so there is nothing to solve",
     }[kind]
-    raise ValueError(f"the WASM kernel supports square models only; this one is {kind!r}: {hint}")
+    raise ValueError(f"the WASM kernel cannot solve this model yet: it is {kind!r}; {hint}")
 
 
 def _write_provenance(target: Path, model: Model, layout: Layout, wasm_path: Path | None) -> None:
@@ -150,7 +148,6 @@ def _write_provenance(target: Path, model: Model, layout: Layout, wasm_path: Pat
         "target": TARGET,
         "abi": "otkd-kernel-2",
         "layout": layout.as_dict(),
-        "metrics": ["camber", "toe", "track", "contact", "ic", "rc"],
         "sources": sources,
         "wasm_sha256": hashlib.sha256(wasm_path.read_bytes()).hexdigest() if wasm_path else None,
     }
@@ -170,7 +167,7 @@ def _copy_sources(target: Path, model: Model) -> None:
 # -- Rust source -----------------------------------------------------------------------
 
 
-def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, numbers) -> str:
+def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, numbers, kind: str) -> str:
     n = problem.n
     rows = len(problem.rows)
     size = layout.sizes
@@ -314,7 +311,7 @@ def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, n
 
     lines += _metrics_block(problem, model)
 
-    # damped Newton
+    # solvers
     lines += [
         "#[inline]",
         "fn solve_linear(a: &mut [f64; N*N], b: &mut [f64; N]) -> bool {",
@@ -355,46 +352,8 @@ def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, n
         "    worst",
         "}",
         "",
-        "/// Solve from the current Q. Returns the infinity norm of the residual; a negative",
-        "/// value means the Jacobian was singular at that step (-1) or the step limit was hit (-2).",
-        "#[no_mangle]",
-        "pub extern \"C\" fn solve(iters: i32) -> f64 {",
-        "    let mut q = [0.0f64; N];",
-        "    let mut g = [0.0f64; G];",
-        "    let mut t = [0.0f64; A];",
-        "    unsafe {",
-        "        for i in 0..N { q[i] = MEM[O_Q + i]; }",
-        "        for i in 0..G { g[i] = MEM[O_G + i]; }",
-        "        for i in 0..A { t[i] = MEM[O_T + i]; }",
-        "    }",
-        "    let mut out = [0.0f64; M];",
-        "    let mut jac = [0.0f64; N*M];",
-        "    let mut worst = residual(&q, &g, &t, &mut out, &mut jac);",
-        "    let mut status = -2.0;",
-        "    for _ in 0..iters {",
-        "        if worst < 1e-12 { status = worst; break; }",
-        "        let mut a = [0.0f64; N*N];",
-        "        let mut b = [0.0f64; N];",
-        "        for k in 0..N*M { a[k] = jac[k]; }",
-        "        for i in 0..N { b[i] = -out[i]; }",
-        "        if !solve_linear(&mut a, &mut b) { status = -1.0; break; }",
-        "        let base = worst;",
-        "        let mut alpha = 1.0;",
-        "        let mut moved = false;",
-        "        for _ in 0..12 {",
-        "            let mut trial = q;",
-        "            for i in 0..N { trial[i] += alpha * b[i]; }",
-        "            let value = residual(&trial, &g, &t, &mut out, &mut jac);",
-        "            if value < base { q = trial; worst = value; moved = true; status = worst; break; }",
-        "            alpha *= 0.5;",
-        "        }",
-        "        if !moved { status = -2.0; break; }",
-        "    }",
-        "    unsafe { for i in 0..N { MEM[O_Q + i] = q[i]; } }",
-        "    status",
-        "}",
-        "",
     ]
+    lines += _newton_solver() if kind == "square" else _least_squares_solver()
     return "\n".join(lines)
 
 
@@ -446,6 +405,108 @@ def _g_expression(key, problem, model, points, axes, numbers, size) -> str:
         f"if MEM[O_NUM + {slot}].is_nan() "
         f"{{ norm3(sub3(point(mem, {b}), point(mem, {a}))) }} else {{ MEM[O_NUM + {slot}] }}"
     )
+
+
+def _solver_prelude() -> list[str]:
+    return [
+        "    let mut q = [0.0f64; N];",
+        "    let mut g = [0.0f64; G];",
+        "    let mut t = [0.0f64; A];",
+        "    unsafe {",
+        "        for i in 0..N { q[i] = MEM[O_Q + i]; }",
+        "        for i in 0..G { g[i] = MEM[O_G + i]; }",
+        "        for i in 0..A { t[i] = MEM[O_T + i]; }",
+        "    }",
+    ]
+
+
+def _newton_solver() -> list[str]:
+    return [
+        "/// Damped Newton from the current Q. Returns the infinity norm of the residual; a",
+        "/// negative value means a singular Jacobian (-1) or no improving step (-2).",
+        "#[no_mangle]",
+        'pub extern "C" fn solve(iters: i32) -> f64 {',
+        *_solver_prelude(),
+        "    let mut out = [0.0f64; M];",
+        "    let mut jac = [0.0f64; N*M];",
+        "    let mut worst = residual(&q, &g, &t, &mut out, &mut jac);",
+        "    let mut status = -2.0;",
+        "    for _ in 0..iters {",
+        "        if worst < 1e-12 { status = worst; break; }",
+        "        let mut a = [0.0f64; N*N];",
+        "        let mut b = [0.0f64; N];",
+        "        for k in 0..N*N { a[k] = jac[k]; }",
+        "        for i in 0..M { b[i] = -out[i]; }",
+        "        if !solve_linear(&mut a, &mut b) { status = -1.0; break; }",
+        "        let base = worst;",
+        "        let mut alpha = 1.0;",
+        "        let mut moved = false;",
+        "        for _ in 0..12 {",
+        "            let mut trial = q;",
+        "            for i in 0..N { trial[i] += alpha * b[i]; }",
+        "            let mut out_trial = [0.0f64; M];",
+        "            let mut jac_trial = [0.0f64; N*M];",
+        "            let value = residual(&trial, &g, &t, &mut out_trial, &mut jac_trial);",
+        "            if value < base {",
+        "                q = trial; worst = value; out = out_trial; jac = jac_trial;",
+        "                moved = true; status = worst; break;",
+        "            }",
+        "            alpha *= 0.5;",
+        "        }",
+        "        if !moved { status = -2.0; break; }",
+        "    }",
+        "    unsafe { for i in 0..N { MEM[O_Q + i] = q[i]; } }",
+        "    status",
+        "}",
+        "",
+    ]
+
+
+def _least_squares_solver() -> list[str]:
+    """Levenberg–Marquardt on the normal equations: `(JᵀJ + λI) δ = −Jᵀr`."""
+    return [
+        "/// Levenberg–Marquardt from the current Q, for a redundant model. Returns the infinity",
+        "/// norm of the residual; -1 means the normal equations were singular.",
+        "#[no_mangle]",
+        'pub extern "C" fn solve(iters: i32) -> f64 {',
+        *_solver_prelude(),
+        "    let mut out = [0.0f64; M];",
+        "    let mut jac = [0.0f64; N*M];",
+        "    let mut worst = residual(&q, &g, &t, &mut out, &mut jac);",
+        "    let mut lambda = 1e-6f64;",
+        "    for _ in 0..iters {",
+        "        if worst < 1e-12 { break; }",
+        "        let mut a = [0.0f64; N*N];",
+        "        let mut b = [0.0f64; N];",
+        "        for i in 0..M {",
+        "            for p in 0..N { b[p] -= jac[i*N + p] * out[i]; }",
+        "        }",
+        "        for p in 0..N {",
+        "            for r in 0..N {",
+        "                let mut s = 0.0f64;",
+        "                for i in 0..M { s += jac[i*N + p] * jac[i*N + r]; }",
+        "                a[p*N + r] = s;",
+        "            }",
+        "        }",
+        "        for d in 0..N { a[d*N + d] += lambda * (a[d*N + d] + 1e-12); }",
+        "        if !solve_linear(&mut a, &mut b) { return -1.0; }",
+        "        let mut trial = q;",
+        "        for i in 0..N { trial[i] += b[i]; }",
+        "        let mut out_trial = [0.0f64; M];",
+        "        let mut jac_trial = [0.0f64; N*M];",
+        "        let value = residual(&trial, &g, &t, &mut out_trial, &mut jac_trial);",
+        "        if value < worst {",
+        "            q = trial; out = out_trial; jac = jac_trial; worst = value;",
+        "            lambda = (lambda * 0.3).max(1e-12);",
+        "        } else {",
+        "            lambda = (lambda * 10.0).min(1e9);",
+        "        }",
+        "    }",
+        "    unsafe { for i in 0..N { MEM[O_Q + i] = q[i]; } }",
+        "    worst",
+        "}",
+        "",
+    ]
 
 
 def _metrics_block(problem: Problem, model: Model) -> list[str]:
@@ -584,7 +645,9 @@ def _symbol_map(problem: Problem) -> dict:
 
 def _cse_block(problem: Problem, n: int, rows: int) -> tuple[list[str], list[str]]:
     mapping = _symbol_map(problem)
-    flat = [problem.jacobian_expr[i, j] for i in range(n) for j in range(rows)]
+    # Row-major: jac[row*N + col]. The two-leg model has more rows than unknowns, so the
+    # iteration order matters and the square case must use the same layout.
+    flat = [problem.jacobian_expr[i, j] for i in range(rows) for j in range(n)]
     exprs = [expression.xreplace(mapping) for expression in [*problem._exprs, *flat]]
     replacements, reduced = cse(exprs, optimizations="basic")
     body = [f"    let {symbol} = {_rust(expression)};" for symbol, expression in replacements]

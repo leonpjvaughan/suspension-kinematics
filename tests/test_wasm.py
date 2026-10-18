@@ -20,6 +20,7 @@ import otkd
 from otkd.emitters.wasm import TARGET, emit_wasm
 from otkd.analysis import outputs
 from otkd.problem.compile import Problem
+from otkd.solvers.least_squares import least_squares
 from otkd.solvers.newton import newton
 from otkd.solvers.system import System
 from tests.helpers import build
@@ -35,7 +36,10 @@ def _reference(model):
     frames = []
     for theta in THETAS:
         system = System(problem, g, problem.theta_for({"lca-drive": theta}))
-        q, _, _ = newton(system, problem.q0())
+        if system.classify() == "redundant":
+            q = least_squares(system, problem.q0())[0]
+        else:
+            q = newton(system, problem.q0())[0]
         metrics = outputs.compute(problem, q, reference)
         frames.append(
             {
@@ -97,10 +101,9 @@ await writeFile('./result.json', JSON.stringify({
 """
 
 
-@pytest.fixture(scope="module")
-def kernel(tmp_path_factory):
-    root = tmp_path_factory.mktemp("wasm")
-    model = otkd.load(build(root, "double-wishbone"))
+def _emit_and_run(tmp_path_factory, name: str):
+    root = tmp_path_factory.mktemp(f"wasm-{name}")
+    model = otkd.load(build(root, name))
     out = root / "kernel"
     written = emit_wasm(model, out)
     if written["wasm"] is None:
@@ -116,6 +119,16 @@ def kernel(tmp_path_factory):
     if result.returncode != 0:
         pytest.fail(f"node failed:\n{result.stdout}\n{result.stderr}")
     return out, json.loads((out / "result.json").read_text()), reference
+
+
+@pytest.fixture(scope="module")
+def kernel(tmp_path_factory):
+    return _emit_and_run(tmp_path_factory, "double-wishbone")
+
+
+@pytest.fixture(scope="module")
+def redundant_kernel(tmp_path_factory):
+    return _emit_and_run(tmp_path_factory, "double-wishbone-two-leg")
 
 
 def test_the_emitter_writes_a_buildable_kernel(kernel):
@@ -173,10 +186,21 @@ def test_the_source_is_reproducible(tmp_path):
     assert "pub extern \"C\" fn solve" in (first / "kernel.rs").read_text()
 
 
-def test_a_redundant_model_is_refused_rather_than_miscompiled(tmp_path):
-    """The kernel carries a square Newton solver. A redundant model must not get one."""
-    model = otkd.load(build(tmp_path, "double-wishbone-two-leg"))
-    with pytest.raises(ValueError, match="square models only"):
+def test_the_redundant_kernel_matches_least_squares(redundant_kernel):
+    """A redundant model gets Levenberg–Marquardt, and it agrees with Python's least squares."""
+    _, result, reference = redundant_kernel
+    assert result["status"] == 0
+    for mine, theirs in zip(result["frames"], reference["frames"]):
+        assert mine["residual"] < 1e-12
+        assert np.max(np.abs(np.array(mine["q"]) - np.array(theirs["q"]))) < 1e-9
+        for name in ("camber", "toe", "track"):
+            assert abs(mine["metrics"][name] - theirs["metrics"][name]) < 1e-9, name
+
+
+def test_a_compliant_model_is_refused_rather_than_miscompiled(tmp_path):
+    """The equilibrium root-find is not compiled yet; the emitter must say so, not emit."""
+    model = otkd.load(build(tmp_path, "double-wishbone-compliant"))
+    with pytest.raises(ValueError, match="equilibrium"):
         emit_wasm(model, tmp_path / "kernel", build=False)
 
 
