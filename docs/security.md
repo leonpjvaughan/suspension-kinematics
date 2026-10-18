@@ -30,6 +30,8 @@ else does.
 - **Interaction limit: collaborators only**, expiring **2027-04-18**. GitHub caps this at six
   months, so it has to be renewed — `gh api -X PUT repos/leonpjvaughan/suspension-kinematics/interaction-limits -f limit=collaborators_only -f expiry=six_months`.
   Without renewal, non-collaborators can comment again.
+- **Dependabot targets `dev`**, not `main`, so a dependency bump arrives as an ordinary pull
+  request on the integration branch.
 - **Fork pull request workflows require approval for all external contributors**, so a stranger's
   first pull request does not run this repository's CI until a maintainer allows it. Fork runs
   never receive secrets, and the default workflow token is **read-only**; `release.yml` opts into
