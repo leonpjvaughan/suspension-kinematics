@@ -1,0 +1,95 @@
+name: release
+
+# A push to main is a release attempt: the version is decided from Conventional Commits, the
+# package and the kernels are built at that version, and the tag is created only once the
+# artefacts exist. The tag is the version everywhere afterwards — `hatch-vcs` serves it — so
+# nothing is written by hand and no commit is made by the bot.
+#
+# docs/releasing.md explains the flow; scripts/version.py decides the number.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags and history: the version calculation needs both
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # Pinned on purpose: the .wasm bytes depend on the compiler, so an unpinned toolchain
+      # would make every release's digest drift. Bump this deliberately, in its own commit.
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.99.1"
+          targets: wasm32-unknown-unknown
+
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Next version
+        id: next
+        run: echo "version=$(uv run python scripts/version.py next)" >> "$GITHUB_OUTPUT"
+
+      - name: Nothing to release
+        if: steps.next.outputs.version == ''
+        run: echo "no release-worthy commits since the last tag; main is up to date"
+
+      - name: Tests
+        if: steps.next.outputs.version != ''
+        run: uv run pytest -q
+
+      - name: Adopt the release version
+        if: steps.next.outputs.version != ''
+        env:
+          V: ${{ steps.next.outputs.version }}
+        run: SETUPTOOLS_SCM_PRETEND_VERSION="$V" uv sync --reinstall-package otkd --frozen
+
+      - name: Bundle — package, payloads, kernels
+        if: steps.next.outputs.version != ''
+        env:
+          V: ${{ steps.next.outputs.version }}
+        run: uv run python scripts/build_release.py --version "$V" --out dist --package
+
+      # The archive is claimed to be reproducible. Check it rather than assert it.
+      - name: Rebuild and compare
+        if: steps.next.outputs.version != ''
+        env:
+          V: ${{ steps.next.outputs.version }}
+        run: |
+          uv run python scripts/build_release.py --version "$V" --out dist-again --package > /dev/null
+          cmp "dist/otkd-$V.zip" "dist-again/otkd-$V.zip"
+
+      # Only now, with the artefacts in hand, does the tag exist.
+      - name: Tag
+        if: steps.next.outputs.version != ''
+        env:
+          V: ${{ steps.next.outputs.version }}
+        run: |
+          git tag "$V"
+          git push origin "$V"
+
+      - name: Publish
+        if: steps.next.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.next.outputs.version }}
+        run: |
+          gh release create "$V" \
+            "dist/otkd-$V.zip" "dist/otkd-$V.zip.sha256" \
+            --title "$V" \
+            --notes-file .github/release-notes.md

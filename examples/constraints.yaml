@@ -1,0 +1,77 @@
+# The constraint-kind library.
+#
+# A kind is a named bundle of modes over the components a family defines. Every family's
+# components live in the frame of the joint's site, and for the axis-aligned families the
+# site's **z is the axis**: the hinge of a revolute, the slide of a prismatic, the normal
+# of a cylindrical or planar joint, and the normal of a plane gap. A site's x and y
+# complete the frame; nothing else about their direction matters.
+#
+# A mode is `locked` (a hard constraint), `free` (no equation) or `spring` (compliant; the
+# joint then needs a compliance in geometry). Every component of the family must appear: a
+# kind that omits one is a kind that silently frees a degree of freedom, so omission is an
+# error rather than a default.
+#
+#   family  frame   tx ty tz  relative translation along the site's x, y, z   metres
+#                   rx ry rz  relative rotation about the site's x, y, z       radians
+#   family  axial   length    |to - from|, against geometry.joints.<j>.length  metres
+#   family  plane   gap       signed distance from the plane at `from` to the
+#                             point at `to`, against geometry.joints.<j>.gap metres
+#
+# This file is an example library: the one the models in this directory share. The package
+# has no built-in library — copy this file, or write your own, and point a topology at it
+# with `constraints: <path>` (the default is `constraints.yaml` beside topology.yaml,
+# resolved relative to it).
+#
+# A model may also add kinds inline under `constraint_kinds:` in topology.yaml, using this
+# same shape. Names must be unique across the two: there is no shadowing, because a
+# per-joint `modes:` override already says "this revolute is about x" without needing a
+# synonym for `revolute`.
+
+constraint_kinds:
+  spherical:
+    family: frame
+    modes: {tx: locked, ty: locked, tz: locked, rx: free,   ry: free,   rz: free}
+
+  revolute:
+    family: frame
+    modes: {tx: locked, ty: locked, tz: locked, rx: locked, ry: locked, rz: free}
+
+  cylindrical:
+    family: frame
+    modes: {tx: locked, ty: locked, tz: free,   rx: locked, ry: locked, rz: free}
+
+  planar:
+    family: frame
+    modes: {tx: free,   ty: free,   tz: locked, rx: locked, ry: locked, rz: free}
+
+  # Slides along the site's z, which is also the axis a revolute would turn about. A
+  # vertical slide for a road body needs a site whose z is up; that is the whole of it.
+  prismatic:
+    family: frame
+    modes: {tx: locked, ty: locked, tz: free,   rx: locked, ry: locked, rz: locked}
+
+  universal:
+    family: frame
+    modes: {tx: locked, ty: locked, tz: locked, rx: locked, ry: free,   rz: free}
+
+  rigid:
+    family: frame
+    modes: {tx: locked, ty: locked, tz: locked, rx: locked, ry: locked, rz: locked}
+
+  # Every component compliant: the joint is located and oriented by its bushes. What the
+  # book's §4 needs if the compliance is at the inner pivots rather than the tie rod.
+  bushed:
+    family: frame
+    modes: {tx: spring, ty: spring, tz: spring, rx: spring, ry: spring, rz: spring}
+
+  distance:
+    family: axial
+    modes: {length: locked}
+
+  # A point held a fixed perpendicular distance from a plane: a wheel of radius `gap`
+  # touching a road, with the plane at the `from` site and the wheel centre at `to`. Set
+  # `gap: spring` for a compliant tyre; that makes the study an equilibrium problem, with
+  # the same machinery §4 uses.
+  plane-gap:
+    family: plane
+    modes: {gap: locked}

@@ -1,0 +1,68 @@
+name: tests
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Rust toolchain for the WASM kernel tests
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install
+        run: uv sync --frozen --python ${{ matrix.python }}
+
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Emitted data is committed and stable
+        run: |
+          for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height; do
+            uv run otkd emit "examples/$model" "examples/$model/out.js"
+          done
+          git add -A
+          git diff --cached --exit-code
+
+      - name: Examples validate
+        run: |
+          for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height; do
+            uv run otkd check "examples/$model" --quiet
+          done
+
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the whole branch, so every commit can be checked
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      # Conventional Commits are the version source, so a malformed one is a broken release.
+      - name: Every commit parses
+        run: uv run python scripts/version.py lint --since "${{ github.event.pull_request.base.sha }}"
+
+      - name: What this merge would release
+        run: |
+          uv run python scripts/version.py next --since "${{ github.event.pull_request.base.sha }}" --json

@@ -1,0 +1,32 @@
+id: dw-compliant
+constraints: ../constraints.yaml
+
+# The book's §4: §1's mechanism with the tie rod replaced by a compliant element.
+# One word changes (`modes: {length: spring}`); nothing else about the model does.
+bodies:
+  ground: {fixed: true, points: [lcaf, lcar, ucaf, ucar, tri]}
+  lca: {points: []}
+  uca: {points: []}
+  up: {points: [lbj, ubj, wc, wco, tro]}
+
+roles: {axle: [wc, wco]}
+
+sites:
+  lca-hinge: {origin: lcaf, z: lca-axis}
+  uca-hinge: {origin: ucaf, z: uca-axis}
+  lbj: {origin: lbj}
+  ubj: {origin: ubj}
+  tri: {origin: tri}
+  tro: {origin: tro}
+  wc: {origin: wc}
+
+joints:
+  - {name: lca-ground, kind: revolute, a: ground, b: lca, site: lca-hinge}
+  - {name: uca-ground, kind: revolute, a: ground, b: uca, site: uca-hinge}
+  - {name: lca-up, kind: spherical, a: lca, b: up, site: lbj}
+  - {name: uca-up, kind: spherical, a: uca, b: up, site: ubj}
+  - {name: tie-rod, kind: distance, a: ground, b: up, from: tri, to: tro,
+     modes: {length: spring}}
+
+actuators:
+  - {name: lca-drive, joint: lca-ground, dof: rz, effort: position}

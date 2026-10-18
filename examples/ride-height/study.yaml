@@ -1,0 +1,6 @@
+analysis: kinematics
+
+# The driven coordinate is ride height, in metres: the road moves, the car does not.
+drivers:
+  - actuator: road-height
+    law: {kind: linear, from: -0.042, to: 0.042, steps: 81}

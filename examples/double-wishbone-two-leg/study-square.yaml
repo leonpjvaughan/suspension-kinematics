@@ -1,0 +1,9 @@
+analysis: kinematics
+
+drivers:
+  - actuator: lca-drive
+    law: {kind: linear, from: -0.1, to: 0.1, steps: 81}
+
+# The row the SVD names as dependent. Which member of a dependent set is removed is
+# arbitrary; that the solution does not change is the point.
+drop: [uca-front.ty]

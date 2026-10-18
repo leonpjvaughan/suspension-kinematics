@@ -1,0 +1,24 @@
+# Every number in the model, in metres, at the design position.
+# x lateral (positive outboard), y forward, z up. Illustrative, not a measured car.
+
+points:
+  lcaf: [0.300, 0.120, 0.150]
+  lcar: [0.300, -0.120, 0.160]
+  lbj: [0.720, 0.010, 0.150]
+  ucaf: [0.380, 0.100, 0.480]
+  ucar: [0.380, -0.100, 0.470]
+  ubj: [0.680, 0.000, 0.520]
+  wc: [0.760, 0.000, 0.320]
+  wco: [0.860, 0.000, 0.320]
+  tri: [0.330, 0.140, 0.300]
+  tro: [0.700, 0.120, 0.310]
+
+axes:
+  lca-axis: [0.000000000, -0.999133073, 0.041630545]   # lcaf -> lcar, unit
+  uca-axis: [0.000000000, -0.998752339, -0.049937617]  # ucaf -> ucar, unit
+
+# `tie-rod.length` is omitted: it defaults to the design separation, which is exact.
+# Giving it explicitly is a check; a rounded value is a real (if tiny) modelling error.
+
+scalars:
+  tyre-radius: 0.200
