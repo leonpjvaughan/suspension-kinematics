@@ -449,3 +449,14 @@ measurement.
   with a `1e-15` floor still differed in CI, which is how the floor found its right value.
 - The converged data — poses, metrics, camber to four decimal places — was never affected; the
   diff in CI showed no frame changed.
+
+---
+
+## Round 14: the sdist must not contain the build output (fix)
+
+The first release run failed its own reproducibility check, correctly: the two bundles differed.
+The cause was not numerics but packaging. When the bundle is written into `dist/` inside the
+repository, `uv build` packages the project directory *including* `dist/` — so the second build
+contained the first build's archive, and the two could never match. The sdist now excludes
+`/dist*`, `/.venv`, `/build` and the pytest cache, and the release is reproducible with the
+output inside the tree. Build output in the source tree is the kind of thing that works once.
