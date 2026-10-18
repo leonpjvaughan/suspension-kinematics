@@ -443,8 +443,9 @@ measurement.
 - The agreement is now rounded to **one significant figure** — "they agree to 1e-13" is the claim
   a panel should print, and its second digit means nothing. This supersedes `HANDOFF.md` §7's
   "three significant figures", which assumed a platform-stable value.
-- The iterate trace is rounded to four significant figures for residuals and six for singular
-  values, with residuals below `1e-15` reported as zero — a residual of `1e-20 m` is zero, and
-  printing it only exposes the platform.
+- The iterate trace is rounded to three significant figures for residuals and four for singular
+  values, and **a residual below `1e-9` is reported as zero**. Below the solver's own tolerance a
+  residual is roundoff: its digits say what the BLAS did, not what the model is. A first attempt
+  with a `1e-15` floor still differed in CI, which is how the floor found its right value.
 - The converged data — poses, metrics, camber to four decimal places — was never affected; the
   diff in CI showed no frame changed.

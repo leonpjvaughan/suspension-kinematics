@@ -21,9 +21,13 @@ ANGLE_DP = 4
 #: property of the BLAS and the scalar library, not of the model. They are reported to
 #: significant figures, and the agreement to *one* — it is a bound ("they agree to 1e-13"), not
 #: a measurement whose second digit means anything.
-RESIDUAL_FIGURES = 4
-SINGULAR_FIGURES = 6
+RESIDUAL_FIGURES = 3
+SINGULAR_FIGURES = 4
 AGREEMENT_FIGURES = 1
+#: A residual below this is the solver's own roundoff: the arithmetic that produced it differs
+#: between machines in its last bits, so its digits are not the model's. Reporting it as zero is
+#: both honest and the only way the artefact can be byte-identical.
+RESIDUAL_FLOOR = 1e-9
 
 
 def _r(value: float, dp: int) -> float:
@@ -133,7 +137,7 @@ def _iterations(sweep: Sweep, index: int) -> list[dict]:
         out.append(
             {
                 "k": k,
-                "residual": [_sig(v, RESIDUAL_FIGURES, floor=1e-15) for v in residual],
+                "residual": [_sig(v, RESIDUAL_FIGURES, floor=RESIDUAL_FLOOR) for v in residual],
                 "singular_values": [_sig(v, SINGULAR_FIGURES) for v in values],
             }
         )
