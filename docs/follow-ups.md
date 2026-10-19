@@ -12,9 +12,9 @@ gap is loud. Three increments close it, in this order.
 
 ## Dynamics
 
-Accepted, planned in [`dynamics.md`](dynamics.md) §7: v2.0 accelerations and reactions, v2.1
-time stepping with projection and the energy test, v2.2 four corners and a load case. Config
-for it already parses and validates.
+v2.0 (accelerations and reactions) and v2.1 (time stepping with projection, the energy test, and
+a `dynamics` study shape with a CLI path) are implemented and tested. Remaining, per
+[`dynamics.md`](dynamics.md) §7: v2.2 — four corners, a chassis body and a contact-patch load.
 
 ## The UI
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from .. import __version__
 from ..report import check
 from ..config.model import Model
-from ..errors import ConfigError, SolverError
+from ..errors import ConfigError, Fault, SolverError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -76,6 +76,12 @@ def _dispatch(args) -> int:
     if args.command == "solve":
         return _solve(model, args)
     if args.command == "emit":
+        if model.study is not None and model.study.analysis == "dynamics":
+            print(
+                "a dynamics study produces a trajectory, not a sweep; write it with `otkd solve --json`",
+                file=sys.stderr,
+            )
+            return 1
         if args.format == "wasm":
             from ..emitters.wasm import emit_wasm
 
@@ -106,8 +112,12 @@ def load_model(args) -> Model:
     study = getattr(args, "study", None)
     if getattr(args, "at", None) is not None:
         model = Model.load(args.model, study=study)
-        if model.study is None or not model.study.drivers:
-            raise ConfigError([])
+        if model.study is None or model.study.analysis == "dynamics" or not model.study.drivers:
+            raise ConfigError(
+                [Fault(args.model, "--at", "a dynamics study has no driven coordinate to solve at")]
+                if model.study is not None and model.study.analysis == "dynamics"
+                else []
+            )
         driver = model.study.drivers[0]
         driver.law.kind = "constant"
         driver.law.value = args.at
@@ -120,6 +130,9 @@ def _solve(model: Model, args) -> int:
     from ..emitters.js import payload
     from ..solvers.sweep import sweep
 
+    if model.study is not None and model.study.analysis == "dynamics":
+        return _solve_dynamics(model, args)
+
     result = sweep(model)
     data = payload(result)
     if args.json_path:
@@ -129,6 +142,62 @@ def _solve(model: Model, args) -> int:
     if not args.quiet:
         print(_table(result))
     return 0
+
+
+def _solve_dynamics(model: Model, args) -> int:
+    import numpy as np
+
+    from ..problem import dynamics
+    from ..problem.compile import Problem
+    from ..solvers.sweep import sweep  # noqa: F401 - keeps the kinematics import local
+
+    problem = Problem(model)
+    study = model.study
+    assert study is not None
+    loads = []
+    for load in study.loads:
+        site = problem.topology.sites[load.site]
+        loads.append(
+            (problem.resolved.point_body[site.origin], site.origin, np.asarray(load.force, dtype=float))
+        )
+    trajectory = dynamics.integrate(
+        problem,
+        problem.q0(),
+        np.zeros(problem.n),
+        duration=float(study.duration),
+        steps=int(study.steps),
+        loads=loads,
+    )
+    if args.json_path:
+        Path(args.json_path).write_text(
+            json.dumps(
+                {
+                    "meta": {
+                        "model": model.topology.id,
+                        "analysis": "dynamics",
+                        "duration": study.duration,
+                        "steps": study.steps,
+                        "generator": f"otkd {__version__}",
+                    },
+                    "trajectory": [
+                        {"t": _round(float(t), 6), "energy": _round(float(e), 6), "constraint": float(c)}
+                        for t, e, c in zip(trajectory.t, trajectory.energy, trajectory.constraint)
+                    ],
+                },
+                indent=2,
+            )
+        )
+    if not args.quiet:
+        stride = max(1, len(trajectory.t) // 12)
+        print(f"{'t':>8s} {'energy':>12s} {'|phi|':>10s}")
+        for t, e, c in zip(trajectory.t[::stride], trajectory.energy[::stride], trajectory.constraint[::stride]):
+            print(f"{t:8.4f} {e:12.4f} {c:10.2e}")
+    return 0
+
+
+def _round(value: float, places: int) -> float:
+    rounded = round(value, places)
+    return 0.0 if rounded == 0 else rounded
 
 
 def _table(result) -> str:

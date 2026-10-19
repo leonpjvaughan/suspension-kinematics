@@ -134,17 +134,6 @@ class Model:
         if faults:
             raise ConfigError(faults)
 
-        if study_model is not None and study_model.analysis == "dynamics":
-            raise ConfigError(
-                [
-                    Fault(
-                        str(study_path),
-                        "analysis",
-                        "dynamics is designed but not implemented; see docs/dynamics.md",
-                    )
-                ]
-            )
-
         return cls(
             topology=topology,
             geometry=geometry,

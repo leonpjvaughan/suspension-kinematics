@@ -391,6 +391,8 @@ seed: previous                # previous | design
   than a mechanism (`dynamics.md` §3.2). A load with no `spring` component anywhere in the
   model has no effect and validation says so, because it usually means the compliance was
   forgotten.
+- **`analysis: dynamics`** turns the study into a time span: `duration` (seconds) and `steps`
+  (output count) are required, `drivers` are ignored, and `solve` integrates. `emit` refuses it.
 - **`drop`** removes named rows from the problem. It is how §2's demonstration is
   performed: the model is redundant, the SVD says which rows participate in the
   dependence, and the study names one to drop. The name is explicit rather than `auto` so

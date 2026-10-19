@@ -479,3 +479,40 @@ output inside the tree. Build output in the source tree is the kind of thing tha
 4. **The bundle is self-describing.** `kernel.json` carries `solver` and `default_numbers` — the
    design values for the length, gap and compliance slots — so a page can pack a geometry without
    reconstructing the emitter's conventions.
+
+---
+
+## Round 16: accelerations and reactions (accepted)
+
+1. **v2.0 is implemented** in `src/otkd/problem/dynamics.py`: the saddle-point system
+   `[[M, Φ_qᵀ], [Φ_q, 0]] [q̈; λ] = [f; γ]`, with `M` assembled per body from the centre-of-mass
+   Jacobians (7×7 and dense, because a body's translation and rotation couple through its
+   centre-of-mass offset), springs and dampers as forces, and `γ` differentiated numerically
+   along `q̇`.
+2. **Springs leave the constraint set.** In dynamics a compliance is a force, not an equation, so
+   `Φ` is the hard rows, the normalisation and the drivers — the kinematic set minus the springs.
+   That is why the same model solves both ways without a second derivation.
+3. **The tests assert what can be asserted exactly**: zero acceleration at a converged
+   equilibrium, the mass matrix's symmetry and its `½mv²` limit, and — independently of how `γ`
+   is computed — that the acceleration reduces the constraint residual from `O(h²)` to `O(h³)`.
+4. **No study shape yet.** A dynamics study needs a trajectory, which is v2.1; until then the
+   entry point is a function of a state, not a sweep.
+
+---
+
+## Round 17: time stepping (accepted)
+
+1. **RK4 with projection after every step.** The constraint residual is held at roundoff rather
+   than allowed to drift by `O(h⁴)` per step, and the state is projected onto both `Φ = 0` and
+   `Φ_q q̇ = 0`. Baumgarte stabilisation was not used: it trades constraint drift for energy drift,
+   which is the quantity the test measures.
+2. **Energy includes the applied loads.** `V` gains `−F·x` for every load. Without it the "energy"
+   of a loaded mechanism is not conserved — the first version of the test measured the load's work
+   instead of the integrator, and the drift did not shrink with the step size, which is how the
+   omission was found.
+3. **A dynamics study is a time span.** `analysis: dynamics` requires `duration` and `steps`,
+   ignores `drivers`, and `otkd solve` prints energy and constraint residual per step (`--json`
+   writes the trajectory). `emit` refuses it: the export contract is a sweep.
+4. **The stiff-spring limit is documented by the test.** The energy test uses a softer tie rod
+   because a 1 kN/mm spring oscillates at ~290 rad/s and RK4 needs a much smaller step than the
+   test takes; the drift is the integrator's, not the model's.
