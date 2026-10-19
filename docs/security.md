@@ -29,9 +29,11 @@ else does.
 
 - **Issues, discussions, wiki and projects are disabled.** There is nowhere for a stranger to
   open a thread; pull requests remain, because that is how a contribution arrives.
-- **Interaction limit: collaborators only**, expiring **2027-04-18**. GitHub caps this at six
-  months, so it has to be renewed — `gh api -X PUT repos/leonpjvaughan/suspension-kinematics/interaction-limits -f limit=collaborators_only -f expiry=six_months`.
-  Without renewal, non-collaborators can comment again.
+- **Interaction limit: collaborators only**, expiring **2027-04-19**. GitHub caps this at six
+  months. **Not planned: renewing it.** When it lapses, non-collaborators can comment on pull
+  requests again; issues and discussions stay disabled, so there is nowhere to open a thread, and
+  the repository accepts the default thereafter. The command, if the view changes, is
+  `gh api -X PUT repos/leonpjvaughan/suspension-kinematics/interaction-limits -f limit=collaborators_only -f expiry=six_months`.
 - **Dependabot targets `dev`**, not `main`, so a dependency bump arrives as an ordinary pull
   request on the integration branch.
 - **Fork pull request workflows require approval for all external contributors**, so a stranger's
@@ -58,7 +60,7 @@ else does.
 | Dependabot security updates | enabled |
 | private vulnerability reporting | enabled — see [`SECURITY.md`](../SECURITY.md) |
 | Dependabot version updates | [`.github/dependabot.yml`](../.github/dependabot.yml), weekly, grouped |
-| secret scanning: non-provider patterns, validity checks | **not set** — the API accepted the request but the setting stayed off; it needs the repository's security settings page or GitHub Advanced Security |
+| secret scanning: non-provider patterns, validity checks | **not planned.** The API accepts the request and ignores it, and the maintainer has declined the manual toggle; push protection and provider patterns are on, which covers the realistic leak |
 
 ## Reversing any of it
 

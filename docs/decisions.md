@@ -551,3 +551,19 @@ mattering, and the `commits` job keeps the individual commits conventional.
    11 ms per Jacobian. Feasible for a figure, not for real time — the compiled kernel is the
    answer, and the derivation is the wall, not the equations.
 5. **A dynamics model ships neither a payload nor a kernel**, and the release manifest says so.
+
+---
+
+## Round 20: CI split, and two things not done (accepted)
+
+1. **The kernel tests are their own CI job.** `tests/test_wasm.py` builds three Rust modules and is
+   several minutes of work for one interpreter's worth of information; the main matrix now runs
+   everything else and the `wasm` job runs that file once, on one Python.
+2. **The four-corner model stays a measurement.** It compiles (167 s for 91 unknowns) but an example
+   CI cannot afford to load is documentation, not an example. If a figure needs it, the compiled
+   kernel or an on-demand script is the route.
+3. **Two repository items are not happening**: the secret-scanning non-provider patterns and
+   validity checks (the API will not set them and the manual toggle is declined; push protection is
+   on), and renewing the interaction limit when it lapses in 2027-04. Issues and discussions stay
+   disabled, so a lapsed limit reopens comments on pull requests and nothing else. Both are recorded
+   as declined in [`security.md`](security.md) rather than left as open tasks.

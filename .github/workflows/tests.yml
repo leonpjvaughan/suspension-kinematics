@@ -27,8 +27,10 @@ jobs:
       - name: Install
         run: uv sync --frozen --python ${{ matrix.python }}
 
+      # The kernel tests build three Rust/WebAssembly modules, which is minutes of work for one
+      # interpreter's worth of information. They live in the `wasm` job below.
       - name: Tests
-        run: uv run pytest -q
+        run: uv run pytest -q --ignore=tests/test_wasm.py
 
       - name: Emitted data is committed and stable
         run: |
@@ -43,6 +45,26 @@ jobs:
           for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height quarter-car; do
             uv run otkd check "examples/$model" --quiet
           done
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+        with:
+          enable-cache: true
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Kernel conformance
+        run: uv run pytest tests/test_wasm.py -q
 
   commits:
     if: github.event_name == 'pull_request'
