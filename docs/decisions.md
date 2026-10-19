@@ -529,3 +529,25 @@ takes **merge commits** (squash and rebase disabled, linear history not required
 an ancestor and a release never needs a ritual. The version calculation always ignored merge
 commits (`git log --no-merges`), so nothing about versioning changes; the pull request title stops
 mattering, and the `commits` job keeps the individual commits conventional.
+
+---
+
+## Round 19: the velocity-product term, and a quarter car (accepted)
+
+1. **`C(q, q̇)` was missing and is now there.** The equations were `M q̈ = f − Φᵀλ`, which is only
+   right when `M` is constant. The quarter-car energy test found it: the total energy varied along
+   the motion by `2.8e-3` relative, and — the tell — the variation did not shrink when the step was
+   divided by four. The term is `Ṁ q̇ − ∂(½q̇ᵀMq̇)/∂q`, built from two finite differences over the
+   mass matrix. With it, the drift is `3.6e-8` at 101 steps and `1.3e-10` at 401: it now converges.
+   Every earlier dynamics test used a state at rest or a tangent velocity, where `C` vanishes, so
+   nothing before this had exercised it.
+2. **`examples/quarter-car/`** is the multi-body example: a heaving chassis, a coil-over expressed
+   as a compliant `distance` joint, a tyre on a road plane, and a dynamics study with no loads.
+3. **`check` understands dynamics studies.** A dynamics model is *supposed* to have freedom, so the
+   rule becomes "the constraint set is independent" (`redundancy == 0`) and the freedom is
+   reported, instead of demanding that the freedom equal the number of actuators. Springs are
+   excluded from the constraint rank, because in dynamics a spring is a force.
+4. **A full four-corner model is measured, not guessed**: 13 bodies, 91 unknowns, 167 s to derive,
+   11 ms per Jacobian. Feasible for a figure, not for real time — the compiled kernel is the
+   answer, and the derivation is the wall, not the equations.
+5. **A dynamics model ships neither a payload nor a kernel**, and the release manifest says so.
