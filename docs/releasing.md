@@ -57,7 +57,7 @@ push retries cleanly instead of skipping the release it never produced.
 
 ```
 otkd-<V>/
-  MANIFEST.json     generator, git commit, python and rustc versions, per-model status
+  MANIFEST.json     bundle format, generator, git commit, python and rustc versions, per-model status
   SHA256SUMS        every file's digest
   package/          otkd-<V>-py3-none-any.whl and otkd-<V>.tar.gz
   models/<name>/out.js                 the static payload

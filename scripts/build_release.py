@@ -106,7 +106,7 @@ def write_manifest(dist: Path, version: str, models: dict) -> None:
         "git": git_sha(),
         "python": platform.python_version(),
         "rustc": tool_version(["rustc", "--version"]),
-        "abi": "otkd-kernel-1",
+        "bundle": "otkd-bundle-1",
         "models": models,
     }
     (dist / "MANIFEST.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
