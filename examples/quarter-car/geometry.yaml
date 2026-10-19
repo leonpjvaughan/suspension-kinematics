@@ -1,0 +1,39 @@
+# The wishbone's numbers, on a chassis that can heave, with a coil-over and a road plane.
+points:
+  lcaf: [0.300, 0.120, 0.150]
+  lcar: [0.300, -0.120, 0.160]
+  lbj: [0.720, 0.010, 0.150]
+  ucaf: [0.380, 0.100, 0.480]
+  ucar: [0.380, -0.100, 0.470]
+  ubj: [0.680, 0.000, 0.520]
+  wc: [0.760, 0.000, 0.320]
+  wco: [0.860, 0.000, 0.320]
+  tri: [0.330, 0.140, 0.300]
+  tro: [0.700, 0.120, 0.310]
+  chassis-origin: [0.400, 0.000, 0.300]
+  coil-top: [0.340, 0.000, 0.620]
+  coil-lower: [0.520, 0.000, 0.155]
+  com-lca: [0.500, 0.000, 0.150]
+  com-uca: [0.530, 0.000, 0.480]
+  com-up: [0.730, 0.000, 0.310]
+  patch: [0.760, 0.000, 0.120]
+
+axes:
+  lca-axis: [0.000000000, -0.999133073, 0.041630545]
+  uca-axis: [0.000000000, -0.998752339, -0.049937617]
+  up: [0.0, 0.0, 1.0]
+
+joints:
+  contact: {gap: 0.200}
+  coil: {compliance: {length: 1.0e-5}}   # m/N, i.e. 100 N/mm
+
+scalars:
+  tyre-radius: 0.200
+
+dynamics:
+  gravity: [0.0, 0.0, -9.81]
+  bodies:
+    chassis: {mass: 300.0, com: chassis-origin, inertia: [40.0, 400.0, 400.0, 0.0, 0.0, 0.0]}
+    lca: {mass: 3.2, com: com-lca, inertia: [0.021, 0.140, 0.131, 0.0, 0.002, 0.0]}
+    uca: {mass: 1.8, com: com-uca, inertia: [0.008, 0.043, 0.041, 0.0, 0.0, 0.0]}
+    up: {mass: 12.0, com: com-up, inertia: [0.310, 0.180, 0.310, 0.0, 0.0, 0.0]}

@@ -124,6 +124,11 @@ def _supported_kind(problem: Problem) -> str:
     """
     from ..solvers.system import System
 
+    if problem.model.study is not None and problem.model.study.analysis == "dynamics":
+        raise ValueError(
+            "a dynamics study has no compiled solver: the kernel solves kinematics and equilibrium, "
+            "not a trajectory"
+        )
     kind = System(problem, problem.numbers(), problem.theta0()).classify()
     if kind in ("square", "redundant", "equilibrium"):
         return kind

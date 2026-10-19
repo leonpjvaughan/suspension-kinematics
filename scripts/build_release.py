@@ -55,6 +55,9 @@ def build_model(example: Path, out_root: Path) -> dict:
     target = out_root / "models" / example.name
     target.mkdir(parents=True, exist_ok=True)
 
+    if model.study is not None and model.study.analysis == "dynamics":
+        status = {"id": model.topology.id, "payload": "none (dynamics)", "kernel": "none (dynamics)"}
+        return status
     (target / "out.js").write_text(render(payload(sweep(model))))
     status = {"id": model.topology.id, "payload": "out.js"}
     try:

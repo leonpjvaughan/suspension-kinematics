@@ -32,7 +32,7 @@ jobs:
 
       - name: Emitted data is committed and stable
         run: |
-          for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height; do
+          for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height quarter-car; do
             uv run otkd emit "examples/$model" "examples/$model/out.js"
           done
           git add -A
@@ -40,7 +40,7 @@ jobs:
 
       - name: Examples validate
         run: |
-          for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height; do
+          for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height quarter-car; do
             uv run otkd check "examples/$model" --quiet
           done
 
