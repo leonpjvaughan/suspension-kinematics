@@ -10,9 +10,11 @@ repository settings are not in the tree and would otherwise be folklore.
 | `main` | pull request required, **0 approvals** (a solo repository cannot self-approve), required checks `test (3.12)`, `test (3.13)`, `commits`, branch must be up to date, linear history, no force push, no deletion, conversation resolution required |
 | `dev` | no force push, no deletion; direct pushes allowed, because that is where work happens |
 
-Squash merging only: the pull request title becomes the commit subject, which is what the version
-calculation reads. Merge and rebase merges are disabled. Branches are **kept** on merge, because
-`dev` is long-lived rather than one branch per change.
+**Merge commits only**; squash and rebase merges are disabled, and linear history is not
+required, so `main` records each pull request as a merge. That keeps the long-lived `dev` an
+ancestor of `main`, which is what a release-on-merge flow needs — the earlier squash-only setting
+forced `dev` to be reset after every release, which cannot be pushed back without a force.
+Branches are kept on merge.
 
 The release workflow pushes a **tag**, never a commit, so branch protection does not obstruct it.
 Tag creation is allowed; deletion and update are not (see below).

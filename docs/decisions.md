@@ -516,3 +516,16 @@ output inside the tree. Build output in the source tree is the kind of thing tha
 4. **The stiff-spring limit is documented by the test.** The energy test uses a softer tie rod
    because a 1 kN/mm spring oscillates at ~290 rad/s and RK4 needs a much smaller step than the
    test takes; the drift is the integrator's, not the model's.
+
+---
+
+## Round 18: merge commits, not squash (accepted)
+
+The squash-only setting produced a footgun that the first three releases walked into: after a
+squash merge, `dev` is no longer an ancestor of `main`, so the next pull request shows as
+conflicted until `dev` is reconciled — and the obvious reconciliation (`git reset --hard
+origin/main`) cannot be pushed back to a branch that forbids force pushes. The repository now
+takes **merge commits** (squash and rebase disabled, linear history not required), so `dev` stays
+an ancestor and a release never needs a ritual. The version calculation always ignored merge
+commits (`git log --no-merges`), so nothing about versioning changes; the pull request title stops
+mattering, and the `commits` job keeps the individual commits conventional.
