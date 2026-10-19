@@ -42,9 +42,9 @@ else does.
 - Allowed actions are restricted to GitHub-owned actions plus `astral-sh/setup-uv@*` and
   `dtolnay/rust-toolchain@*`; no other third-party action can be added without changing the
   policy.
-- `sha_pinning_required` is **off** for now. Turning it on is the next hardening step and needs
-  every `uses:` line rewritten to a commit SHA; Dependabot can maintain those pins once they
-  exist.
+- `sha_pinning_required` is **on**. Every `uses:` line names a commit SHA (`actions/checkout`,
+  `astral-sh/setup-uv`, `dtolnay/rust-toolchain`), so a moved tag cannot change what runs.
+  Dependabot's actions updates maintain the pins.
 
 ## Security features
 
