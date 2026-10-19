@@ -1,0 +1,6 @@
+analysis: dynamics
+
+# No load and no driver: the chassis is released from the design position and gravity does the
+# work. The coil-over and the mechanism decide the motion.
+duration: 0.5
+steps: 101

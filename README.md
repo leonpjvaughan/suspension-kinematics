@@ -73,6 +73,7 @@ for design in designs:
 | `double-wishbone-two-leg` | §2 and §3: the upper arm as two legs, redundant by one, least squares, and the SVD that says why |
 | `double-wishbone-compliant` | §4: the tie rod as a compliance under load; the stiffness ladder converges to rigid |
 | `ride-height` | the same corner with the chassis inertial and the road driven, so the sweep is ride height |
+| `quarter-car` | a dynamics model: a heaving chassis, a coil-over, and the tyre held on a road plane |
 
 `study-square.yaml` in the two-leg example is the same model with the dependent row dropped.
 

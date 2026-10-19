@@ -256,8 +256,8 @@ otkd-0.1.0/
   models/double-wishbone/kernel/provenance.json input hashes, toolchain
   models/double-wishbone/kernel/source/*.yaml   the four config files
   models/ride-height/…
-  models/double-wishbone-two-leg/out.js         payload, no kernel: the model is redundant
-  models/double-wishbone-compliant/out.js       payload, no kernel: the model is compliant
+  models/double-wishbone-two-leg/…              every model the emitter supports, with a kernel
+  models/quarter-car/                           neither: a dynamics study has no compiled solver
 ```
 
 The manifest says *why* a kernel is missing rather than leaving a hole, so a consumer sees the

@@ -51,10 +51,15 @@ class Report:
         ]
         for row, value in self.rows:
             lines.append(f"    {row.name:24s} {row.group:8s} {value:+.3e} {row.unit or '-':3s}")
+        dynamics = self.model.study is not None and self.model.study.analysis == "dynamics"
         lines += [
             f"  jacobian      {self.problem.n} unknowns, {len(self.rows)} rows",
             f"  rank          {self.rank}   redundancy {self.redundancy}",
-            f"  mobility      {self.mobility}   actuators {self.actuators}   ok",
+            (
+                f"  freedom       {self.mobility}   dynamics   ok"
+                if dynamics
+                else f"  mobility      {self.mobility}   actuators {self.actuators}   ok"
+            ),
         ]
         for warning in self.warnings:
             lines.append(f"  warning       {warning}")
@@ -83,17 +88,42 @@ def check(model: Model) -> Report:
             )
 
     jac = problem.jacobian(q0, g, theta0)
-    # A compliant component is still an equation — a different one, but it closes the same
-    # degree of freedom — so it counts towards the mobility (docs/config-layer.md §3).
-    constraints = [i for i, row in enumerate(problem.rows) if row.group in (HARD, NORM, SPRING)]
+    # In kinematics a compliant component is still an equation — a different one, but it closes
+    # the same degree of freedom — so it counts towards the mobility. In dynamics a spring is a
+    # *force*: the constraint set is the hard rows and the normalisation, and the freedom it
+    # leaves is the motion the integrator will follow.
+    dynamics = model.study is not None and model.study.analysis == "dynamics"
+    constraints = [
+        i
+        for i, row in enumerate(problem.rows)
+        if row.group in (HARD, NORM) or (not dynamics and row.group == SPRING)
+    ]
     rank, null, singular = rank_and_null(jac[constraints], rtol=RANK_RTOL)
     mobility = problem.n - rank
     actuators = sum(1 for actuator in model.topology.actuators if actuator.effort == "position")
-    constrained = [i for i, row in enumerate(problem.rows) if row.group != "spring"]
-    redundancy = len(constrained) - int((np.linalg.svd(jac[constrained], compute_uv=False) > RANK_RTOL).sum())
+    if dynamics:
+        redundant_rows = constraints
+    else:
+        redundant_rows = [i for i, row in enumerate(problem.rows) if row.group != "spring"]
+    redundancy = len(redundant_rows) - int(
+        (np.linalg.svd(jac[redundant_rows], compute_uv=False) > RANK_RTOL).sum()
+    )
 
+    # A dynamics study has no driven coordinates: the mechanism is *supposed* to have freedom,
+    # and the question is whether the constraint set is independent (a redundant row makes the
+    # DAE singular) rather than whether the freedom equals the actuators.
     free: list[str] = []
-    if mobility > actuators:
+    if dynamics:
+        if redundancy:
+            faults.append(
+                Fault(
+                    model.files.get("topology", "topology.yaml"),
+                    "joints",
+                    f"a dynamics model must not be redundant: {redundancy} dependent row(s) make "
+                    f"the equations of motion singular",
+                )
+            )
+    elif mobility > actuators:
         for column in null.T:
             free.append(_describe_direction(problem, column))
         faults.append(

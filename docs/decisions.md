@@ -516,3 +516,54 @@ output inside the tree. Build output in the source tree is the kind of thing tha
 4. **The stiff-spring limit is documented by the test.** The energy test uses a softer tie rod
    because a 1 kN/mm spring oscillates at ~290 rad/s and RK4 needs a much smaller step than the
    test takes; the drift is the integrator's, not the model's.
+
+---
+
+## Round 18: merge commits, not squash (accepted)
+
+The squash-only setting produced a footgun that the first three releases walked into: after a
+squash merge, `dev` is no longer an ancestor of `main`, so the next pull request shows as
+conflicted until `dev` is reconciled — and the obvious reconciliation (`git reset --hard
+origin/main`) cannot be pushed back to a branch that forbids force pushes. The repository now
+takes **merge commits** (squash and rebase disabled, linear history not required), so `dev` stays
+an ancestor and a release never needs a ritual. The version calculation always ignored merge
+commits (`git log --no-merges`), so nothing about versioning changes; the pull request title stops
+mattering, and the `commits` job keeps the individual commits conventional.
+
+---
+
+## Round 19: the velocity-product term, and a quarter car (accepted)
+
+1. **`C(q, q̇)` was missing and is now there.** The equations were `M q̈ = f − Φᵀλ`, which is only
+   right when `M` is constant. The quarter-car energy test found it: the total energy varied along
+   the motion by `2.8e-3` relative, and — the tell — the variation did not shrink when the step was
+   divided by four. The term is `Ṁ q̇ − ∂(½q̇ᵀMq̇)/∂q`, built from two finite differences over the
+   mass matrix. With it, the drift is `3.6e-8` at 101 steps and `1.3e-10` at 401: it now converges.
+   Every earlier dynamics test used a state at rest or a tangent velocity, where `C` vanishes, so
+   nothing before this had exercised it.
+2. **`examples/quarter-car/`** is the multi-body example: a heaving chassis, a coil-over expressed
+   as a compliant `distance` joint, a tyre on a road plane, and a dynamics study with no loads.
+3. **`check` understands dynamics studies.** A dynamics model is *supposed* to have freedom, so the
+   rule becomes "the constraint set is independent" (`redundancy == 0`) and the freedom is
+   reported, instead of demanding that the freedom equal the number of actuators. Springs are
+   excluded from the constraint rank, because in dynamics a spring is a force.
+4. **A full four-corner model is measured, not guessed**: 13 bodies, 91 unknowns, 167 s to derive,
+   11 ms per Jacobian. Feasible for a figure, not for real time — the compiled kernel is the
+   answer, and the derivation is the wall, not the equations.
+5. **A dynamics model ships neither a payload nor a kernel**, and the release manifest says so.
+
+---
+
+## Round 20: CI split, and two things not done (accepted)
+
+1. **The kernel tests are their own CI job.** `tests/test_wasm.py` builds three Rust modules and is
+   several minutes of work for one interpreter's worth of information; the main matrix now runs
+   everything else and the `wasm` job runs that file once, on one Python.
+2. **The four-corner model stays a measurement.** It compiles (167 s for 91 unknowns) but an example
+   CI cannot afford to load is documentation, not an example. If a figure needs it, the compiled
+   kernel or an on-demand script is the route.
+3. **Two repository items are not happening**: the secret-scanning non-provider patterns and
+   validity checks (the API will not set them and the manual toggle is declined; push protection is
+   on), and renewing the interaction limit when it lapses in 2027-04. Issues and discussions stay
+   disabled, so a lapsed limit reopens comments on pull requests and nothing else. Both are recorded
+   as declined in [`security.md`](security.md) rather than left as open tasks.

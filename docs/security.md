@@ -10,9 +10,11 @@ repository settings are not in the tree and would otherwise be folklore.
 | `main` | pull request required, **0 approvals** (a solo repository cannot self-approve), required checks `test (3.12)`, `test (3.13)`, `commits`, branch must be up to date, linear history, no force push, no deletion, conversation resolution required |
 | `dev` | no force push, no deletion; direct pushes allowed, because that is where work happens |
 
-Squash merging only: the pull request title becomes the commit subject, which is what the version
-calculation reads. Merge and rebase merges are disabled. Branches are **kept** on merge, because
-`dev` is long-lived rather than one branch per change.
+**Merge commits only**; squash and rebase merges are disabled, and linear history is not
+required, so `main` records each pull request as a merge. That keeps the long-lived `dev` an
+ancestor of `main`, which is what a release-on-merge flow needs — the earlier squash-only setting
+forced `dev` to be reset after every release, which cannot be pushed back without a force.
+Branches are kept on merge.
 
 The release workflow pushes a **tag**, never a commit, so branch protection does not obstruct it.
 Tag creation is allowed; deletion and update are not (see below).
@@ -27,9 +29,11 @@ else does.
 
 - **Issues, discussions, wiki and projects are disabled.** There is nowhere for a stranger to
   open a thread; pull requests remain, because that is how a contribution arrives.
-- **Interaction limit: collaborators only**, expiring **2027-04-18**. GitHub caps this at six
-  months, so it has to be renewed — `gh api -X PUT repos/leonpjvaughan/suspension-kinematics/interaction-limits -f limit=collaborators_only -f expiry=six_months`.
-  Without renewal, non-collaborators can comment again.
+- **Interaction limit: collaborators only**, expiring **2027-04-19**. GitHub caps this at six
+  months. **Not planned: renewing it.** When it lapses, non-collaborators can comment on pull
+  requests again; issues and discussions stay disabled, so there is nowhere to open a thread, and
+  the repository accepts the default thereafter. The command, if the view changes, is
+  `gh api -X PUT repos/leonpjvaughan/suspension-kinematics/interaction-limits -f limit=collaborators_only -f expiry=six_months`.
 - **Dependabot targets `dev`**, not `main`, so a dependency bump arrives as an ordinary pull
   request on the integration branch.
 - **Fork pull request workflows require approval for all external contributors**, so a stranger's
@@ -56,7 +60,7 @@ else does.
 | Dependabot security updates | enabled |
 | private vulnerability reporting | enabled — see [`SECURITY.md`](../SECURITY.md) |
 | Dependabot version updates | [`.github/dependabot.yml`](../.github/dependabot.yml), weekly, grouped |
-| secret scanning: non-provider patterns, validity checks | **not set** — the API accepted the request but the setting stayed off; it needs the repository's security settings page or GitHub Advanced Security |
+| secret scanning: non-provider patterns, validity checks | **not planned.** The API accepts the request and ignores it, and the maintainer has declined the manual toggle; push protection and provider patterns are on, which covers the realistic leak |
 
 ## Reversing any of it
 

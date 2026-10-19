@@ -1,0 +1,42 @@
+id: quarter-car
+constraints: ../constraints.yaml
+
+# A quarter car: the chassis heaves on a prismatic joint, the corner hangs off it, the tyre is
+# held on a road plane, and a coil spring between chassis and lower arm carries the weight.
+# It is a dynamics model by construction — a kinematic study would need six actuators for the
+# chassis's freedom, and there is none to give it.
+bodies:
+  ground: {fixed: true, points: [patch]}
+  chassis: {points: [chassis-origin, lcaf, lcar, ucaf, ucar, tri, coil-top]}
+  lca: {points: [coil-lower, com-lca]}
+  uca: {points: [com-uca]}
+  up: {points: [lbj, ubj, wc, wco, tro, com-up]}
+
+roles: {axle: [wc, wco]}
+
+sites:
+  heave: {origin: chassis-origin, z: up}
+  lca-hinge: {origin: lcaf, z: lca-axis}
+  uca-hinge: {origin: ucaf, z: uca-axis}
+  lbj: {origin: lbj}
+  ubj: {origin: ubj}
+  tri: {origin: tri}
+  tro: {origin: tro}
+  wc: {origin: wc}
+  coil-seat: {origin: coil-top}
+  coil-eye: {origin: coil-lower}
+  patch: {origin: patch, z: up}
+
+joints:
+  - {name: heave, kind: prismatic, a: ground, b: chassis, site: heave}
+  - {name: lca-chassis, kind: revolute, a: chassis, b: lca, site: lca-hinge}
+  - {name: uca-chassis, kind: revolute, a: chassis, b: uca, site: uca-hinge}
+  - {name: lca-up, kind: spherical, a: lca, b: up, site: lbj}
+  - {name: uca-up, kind: spherical, a: uca, b: up, site: ubj}
+  - {name: tie-rod, kind: distance, a: chassis, b: up, from: tri, to: tro}
+  # the coil-over: a distance joint whose length is compliant, which is what a spring is
+  - {name: coil, kind: distance, a: chassis, b: lca, from: coil-seat, to: coil-eye,
+     modes: {length: spring}}
+  - {name: contact, kind: plane-gap, a: ground, b: up, from: patch, to: wc}
+
+actuators: []

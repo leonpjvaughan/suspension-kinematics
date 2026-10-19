@@ -55,6 +55,27 @@ def _skew(v: np.ndarray) -> np.ndarray:
     return np.array([[0.0, -v[2], v[1]], [v[2], 0.0, -v[0]], [-v[1], v[0], 0.0]])
 
 
+def _point_jacobian(offset: np.ndarray, w: float, x: float, y: float, z: float) -> np.ndarray:
+    """`∂(p + R(q) o)/∂q` for the seven pose parameters — the *full* derivative.
+
+    The skew-only form (`[I, −[r]×W]`) is the derivative along the unit-quaternion tangent space;
+    it is what most codes use because they never leave the manifold. Here the pose is a plain
+    seven-vector, and a force built from the tangent-only form disagrees with the potential's own
+    gradient in the radial direction. On a rotating body that direction is not orthogonal to the
+    motion, so the disagreement leaks energy — which is exactly what the quarter-car test found.
+    """
+    v = np.array([x, y, z], dtype=float)
+    o = np.asarray(offset, dtype=float)
+    jac = np.zeros((3, 7))
+    jac[:, :3] = np.eye(3)
+    jac[:, 3] = 2.0 * (w * o + np.cross(v, o))
+    for j in range(3):
+        axis = np.zeros(3)
+        axis[j] = 1.0
+        jac[:, 4 + j] = 2.0 * (-v[j] * o + axis * (v @ o) + v * o[j] + w * np.cross(axis, o))
+    return jac
+
+
 def _rotation(w: float, x: float, y: float, z: float) -> np.ndarray:
     xx, yy, zz = x * x, y * y, z * z
     return np.array(
@@ -95,11 +116,37 @@ def mass_matrix(problem: Problem, q: np.ndarray, g: np.ndarray) -> np.ndarray:
             offset = problem.resolved.points[numbers.com]
         else:
             offset = np.asarray(numbers.com, dtype=float)
-        r = rotation @ offset
-        jv = np.hstack([np.eye(3), -_skew(r) @ omega])
+        jv = _point_jacobian(np.asarray(offset, dtype=float), w, x, y, z)
         jw = np.hstack([np.zeros((3, 3)), omega])
         matrix[block, block] = numbers.mass * (jv.T @ jv) + jw.T @ _inertia(numbers.inertia) @ jw
     return matrix
+
+
+def velocity_products(problem: Problem, q: np.ndarray, qdot: np.ndarray, g: np.ndarray) -> np.ndarray:
+    """`C(q, q̇) = Ṁ q̇ − ∂(½ q̇ᵀM q̇)/∂q`, the term the Euler–Lagrange equations add.
+
+    `M q̈ = f` is only right when `M` is constant. Here it is not: a body's mass matrix depends
+    on its orientation, and the quaternion parametrisation makes even a pure rotation change `M`.
+    Omitting `C` leaves the total energy varying along the motion — which is exactly what the
+    quarter-car test caught, at a magnitude that did not shrink with the step size.
+    """
+    def kinetic(state: np.ndarray) -> float:
+        return 0.5 * float(qdot @ mass_matrix(problem, state, g) @ qdot)
+
+    gradient = np.zeros(problem.n)
+    for j in range(problem.n):
+        step = 1e-7 * (1.0 + abs(q[j]))
+        offset = np.zeros(problem.n)
+        offset[j] = step
+        gradient[j] = (kinetic(q + offset) - kinetic(q - offset)) / (2.0 * step)
+
+    speed = float(np.linalg.norm(qdot))
+    if speed == 0.0:
+        return -gradient
+    step = 1e-7 / speed
+    forward = mass_matrix(problem, q + step * qdot, g) @ qdot
+    backward = mass_matrix(problem, q - step * qdot, g) @ qdot
+    return (forward - backward) / (2.0 * step) - gradient
 
 
 def forces(
@@ -128,8 +175,7 @@ def forces(
         rotation = _rotation(w, x, y, z)
         omega = _omega_map(w, x, y, z)
         offset = problem.resolved.points[numbers.com] if isinstance(numbers.com, str) else np.asarray(numbers.com)
-        r = rotation @ np.asarray(offset, dtype=float)
-        jv = np.hstack([np.eye(3), -_skew(r) @ omega])
+        jv = _point_jacobian(np.asarray(offset, dtype=float), w, x, y, z)
         force[block] += jv.T @ (numbers.mass * weight)
 
     for body, point, applied in loads or []:
@@ -187,6 +233,7 @@ def accelerations(
     rows = [i for i, row in enumerate(problem.rows) if row.group != SPRING]
     mass = mass_matrix(problem, q, g)
     force = forces(problem, q, qdot, g, theta, loads, gravity)
+    force = force - velocity_products(problem, q, qdot, g)
     constraint, gamma = acceleration_terms(problem, q, qdot, g, theta)
 
     size = problem.n + len(rows)
@@ -314,7 +361,17 @@ def integrate(
     qdot = np.array(qdot, dtype=float)
 
     def derivative(state_q, state_v):
-        return state_v, accelerations(problem, state_q, state_v, loads=loads, gravity=gravity, theta=theta).qddot
+        # A linear combination of unit quaternions is not a unit quaternion, so the intermediate
+        # RK4 stages leave the gauge surface. Renormalising before evaluating the acceleration
+        # keeps every stage on it; without this the constraint reaction leaks through the radial
+        # direction and the energy drifts by an amount that does not shrink with the step.
+        stage = state_q.copy()
+        for body in problem.moving:
+            start = problem._qstart[body] + 3
+            norm = float(np.linalg.norm(stage[start : start + 4]))
+            if norm:
+                stage[start : start + 4] /= norm
+        return state_v, accelerations(problem, stage, state_v, loads=loads, gravity=gravity, theta=theta).qddot
 
     times = np.linspace(0.0, duration, steps)
     states = np.zeros((steps, problem.n))

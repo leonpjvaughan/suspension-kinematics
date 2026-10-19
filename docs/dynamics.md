@@ -115,9 +115,16 @@ the README says this is not.
 With `q` the body-pose unknowns of [`problem-mapping.md`](problem-mapping.md) §2:
 
 ```
-M(q) q̈  =  f(q, q̇)  −  Φ_q(q)ᵀ λ
+M(q) q̈  +  C(q, q̇)  =  f(q, q̇)  −  Φ_q(q)ᵀ λ
 Φ(q) = 0                                    (hard rows + any position actuator)
 ```
+
+- **`C` is not optional.** `M` depends on the configuration — a body's inertia couples to its
+  orientation, and a quaternion makes even a pure rotation change `M` — so the Euler–Lagrange
+  equations carry `C = Ṁ q̇ − ∂(½ q̇ᵀM q̇)/∂q`. Building it as two finite differences over the mass
+  matrix is cheap. It was missing in the first implementation, and the quarter-car test found it:
+  the total energy varied along the motion by an amount that did not shrink with the step size.
+  Every earlier dynamics test used a state at rest or a tangent velocity, where `C` vanishes.
 
 - **`M` is block diagonal, 6×6 per body**, because the coordinates are the bodies' own
   poses rather than generalised joint coordinates. Per body, `M_b = diag(m I₃,
