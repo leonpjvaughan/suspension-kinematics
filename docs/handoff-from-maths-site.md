@@ -4,6 +4,14 @@
 **At:** `otkd` 0.4.0 (commit `f5d2c92`), 2026-10-19
 **Status:** requests, with the measurements that justify each. Nothing here is a bug report
 unless it says so.
+**Refreshed:** 2026-10-19, from the book's own queue (`.agents/todo.md`), which now names the
+package as the blocker on two numbered items — 83 (the stiffness ladder) and 85 (the quarter-car
+numbers). Those two are §1 and §2 below; the rest is unchanged.
+
+Two things moved on the book's side since this was written, and neither is a request:
+the geometry is now reconciled (§"What the site already uses"), and the quarter-car trajectory is
+extracted by a committed script that records the digests of the three config files it read — which
+is what makes §2's second half urgent rather than tidy.
 
 ## What the site already uses
 
@@ -15,6 +23,11 @@ quarter-car trajectory was extracted with your Python API and is quoted per step
 limits checks (rank/redundancy, the monotone compliance ladder, energy drift) appear on the
 pages as your results.
 
+**The queue names you.** `.agents/todo.md` in the book holds open items only, and two of them
+say the same thing in different words: item 83 is blocked on a joint the package does not offer,
+and item 85 is a dependency the package cannot currently prove is unchanged. Both are quoted
+below in the book's own words, so the acceptance here and there cannot drift apart.
+
 **Geometry is reconciled on our side.** As of 0.4.0 the book uses your numbers: upper arm
 `ucaf z = 0.480`, `ucar z = 0.470`, `tri/tro y = 0.14/0.12`, and `tyre-radius = 0.200`, which
 puts the ground at **z = 0.12** rather than z = 0. The roll centre now agrees with your export
@@ -24,7 +37,7 @@ whether 0.200 is the radius you want (see §5).
 
 ## The requests
 
-### 1. A compliant joint at the upper ball joint, and a stiffness study
+### 1. A compliant joint at the upper ball joint, and a stiffness study (the book's item 83)
 
 **Why.** §1.5 of the book asks how stiff a bush at the **upper ball joint** must be before the
 bushed model is within a tenth of a degree of the rigid one. The ladder is the section's
@@ -56,18 +69,49 @@ the sweep.
 - `otkd emit --format wasm` compiles it, with the compliance in `numbers[]` (as the tie-rod
   model already does).
 
-### 2. A dynamics trajectory with outputs per step
+The book's own done-means, so the two lists agree: a compliant-`ubj` model in the package sweeps
+stiffness and its export reports the ladder; §1.5's table is generated from the vendored export
+rather than typed; the page's model and the export agree to the rounding shown, and the panel says
+which is which; and `grep -n "one stiffness" books/maths-applied/docs` prints nothing.
+
+### 2. A dynamics trajectory with outputs per step — and the model that produced it (the book's item 85)
 
 **Why.** `otkd solve --json` on a `dynamics` study writes `t`, `energy` and `constraint` only.
 §1.6 needs what the *page* talks about at each step: travel and camber. We extracted it with a
-30-line script against `problem.world_points` and `outputs.compute` (it is committed beside the
-data in our tree), which works but is a second implementation of your export.
+30-line script against `problem.world_points` and `outputs.compute`
+(`books/maths-applied/docs/assets/data/quarter-car/extract.py`), which works but is a second
+implementation of your export, and it has to be re-run by a person.
 
-**Ask.** Either add the standard outputs to each trajectory sample (`travel`, `camber`, `toe`,
-and `wc`), or a `--poses` flag on `solve` that writes them.
+**Ask, first half.** Either add the standard outputs to each trajectory sample (`travel`,
+`camber`, `toe`, and `wc`), or a `--poses` flag on `solve` that writes them.
 
-**Acceptance.** `otkd solve examples/quarter-car --json` contains, per step, the same fields as
-a `sweep.frames[]` entry, or a documented flag does. The energy and constraint remain.
+**Acceptance, first half.** `otkd solve examples/quarter-car --json` contains, per step, the same
+fields as a `sweep.frames[]` entry, or a documented flag does. The energy and constraint remain.
+
+**Ask, second half — and this one is a correctness question, not a convenience.** The bundle
+ships nothing for a dynamics model: the manifest lists `quarter-car` with `"none (dynamics)"` for
+both payload and kernel, which is right, and leaves the book unable to prove *which model* a
+trajectory came from. The book vendors the trajectory separately, so a release that changed the
+quarter car — adding a damper to the coil, say — would silently invalidate §1.6's table, figure
+and its 0.006° agreement with nothing failing anywhere.
+
+**What we do have.** The extraction writes the `sha256` of the three files it read —
+`topology.yaml`, `geometry.yaml`, `study.yaml` — into `meta.sources` in the vendored
+`trajectory.js`, and the data README repeats them. That is a ledger with nothing to check it
+against, and it is short of the model as well: the constraint kinds the joints name live in
+`examples/constraints.yaml`, outside the model directory, so a release that changed what `spring`
+means would change this model without changing one recorded digest. Hashing the four files, or
+hashing the bundle's copy of the library once, closes both gaps.
+
+**Acceptance, second half.** For a dynamics model the manifest carries those digests — the four
+config files' `sha256`, and ideally the bytes — so that a test in the book compares
+`meta.sources` against the vendored bundle and fails when they disagree. No kernel and no
+payload: the request is only that the bundle can witness the model.
+
+The book's own done-means: the package's quarter car is unchanged at the vendored version, or
+§1.6 is re-derived; if the sources are ever vendored, its data test compares the trajectory's
+source digests with the bundle's files; and §1.6's table and figure are regenerated together,
+never one without the other.
 
 ### 3. The SVD diagnosis in the payload
 
@@ -89,14 +133,14 @@ If §1's study axis is more than a config change, the alternative is a `scalar` 
 `js` emitter sweeps. Either way, the shape the book needs is: one model, four stiffnesses,
 one export.
 
-### 5. `tyre-radius`, and which datum is the ground (small)
+### 5. `tyre-radius`, and which datum is the ground (small) — **answered on our side, still worth a sentence from you**
 
 Your examples declare `tyre-radius: 0.200` with the wheel centre at `z = 0.32`, so the
 exported contact patch is at `z = 0.12` and the roll centre is measured from there. We adopted
 that number so the book and the payload agree, and the page now states the ground plane
-explicitly. If 0.200 was a placeholder and 0.320 was intended, tell us and we will follow the
-release that changes it — but the two repositories should not disagree about where the ground
-is.
+explicitly. The book's figure and the payload therefore part company nowhere. If 0.200 was a
+placeholder and 0.320 was intended, tell us and we will follow the release that changes it — but
+the two repositories should not disagree about where the ground is.
 
 ## What we are **not** asking for
 
@@ -104,6 +148,16 @@ is.
 - No change to the ABI: the vendored kernel modules are working unchanged.
 - No new example model unless you want one. The requested sweeps are studies of the existing
   models, not new mechanisms.
+- No damping in the quarter car until §2's second half exists. Adding it is a change to §1.6's
+  numbers, and the order is: release, ledger digest, re-derive the chapter — never the reverse.
+
+## What would make a request wrong to attempt
+
+If a compliant spherical joint cannot be represented without changing the problem family — if it
+breaks the rank classification, or the kernel refuses it for a reason that is about the
+mathematics rather than the plumbing — say so and stop. An approximation built out of a compliant
+*distance* joint would give a ladder of the right shape and the wrong physics, which is worse than
+a typed table, and the book would print it.
 
 ## If you would like the book's side of the contract
 

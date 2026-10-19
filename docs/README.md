@@ -17,6 +17,7 @@ sketch, it says so and gives the reason; [`decisions.md`](decisions.md) records 
 | [`entry-points.md`](entry-points.md) | what a user supplies, the CLI, the Python API, and how a bad file fails |
 | [`releasing.md`](releasing.md) | branches, Conventional Commits, how the version is decided, and what a push to `main` does |
 | [`wasm.md`](wasm.md) | the compiled kernel: what a generated kernel is mathematically, how sympy becomes Rust becomes WebAssembly, and how the book consumes it |
+| [`handoff-from-maths-site.md`](handoff-from-maths-site.md) | what the textbook repository asks of the package, in its own measured numbers, and what it already relies on |
 | [`naming.md`](naming.md) | the name, the module layout, the verbs, and the engine boundary every front end speaks |
 | [`ui.md`](ui.md) | the config UI: what it edits, what it shows, and where Rust fits (a window, not an engine) |
 | [`security.md`](security.md) | branch, tag, interaction and Actions protection, and what expires |
