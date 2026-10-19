@@ -479,3 +479,21 @@ output inside the tree. Build output in the source tree is the kind of thing tha
 4. **The bundle is self-describing.** `kernel.json` carries `solver` and `default_numbers` — the
    design values for the length, gap and compliance slots — so a page can pack a geometry without
    reconstructing the emitter's conventions.
+
+---
+
+## Round 16: accelerations and reactions (accepted)
+
+1. **v2.0 is implemented** in `src/otkd/problem/dynamics.py`: the saddle-point system
+   `[[M, Φ_qᵀ], [Φ_q, 0]] [q̈; λ] = [f; γ]`, with `M` assembled per body from the centre-of-mass
+   Jacobians (7×7 and dense, because a body's translation and rotation couple through its
+   centre-of-mass offset), springs and dampers as forces, and `γ` differentiated numerically
+   along `q̇`.
+2. **Springs leave the constraint set.** In dynamics a compliance is a force, not an equation, so
+   `Φ` is the hard rows, the normalisation and the drivers — the kinematic set minus the springs.
+   That is why the same model solves both ways without a second derivation.
+3. **The tests assert what can be asserted exactly**: zero acceleration at a converged
+   equilibrium, the mass matrix's symmetry and its `½mv²` limit, and — independently of how `γ`
+   is computed — that the acceleration reduces the constraint residual from `O(h²)` to `O(h³)`.
+4. **No study shape yet.** A dynamics study needs a trajectory, which is v2.1; until then the
+   entry point is a function of a state, not a sweep.

@@ -142,6 +142,11 @@ That is the same promise the config split makes — one topology, many geometrie
 literally rather than approximately. It is also the reason `solve` is cheap enough to sit
 behind a CLI: the slow step is per topology, the fast step is per sweep.
 
+Dynamics is a state-level entry point rather than a study, because there is no time stepping
+yet: `otkd.problem.dynamics.accelerations(problem, q, qdot, loads=..., gravity=...)` returns the
+acceleration and the reaction in every constrained row. No CLI verb and no study shape until v2.1
+([`dynamics.md`](dynamics.md) §7).
+
 The advanced surface (`Problem.rows`, `.jac`, `.diagnose`) is a function of `(q, geometry)`
 and is what `newton`, `least_squares` and `svd_diagnose` consume
 ([`problem-mapping.md`](problem-mapping.md) §4–§6). It is public because a reader of the

@@ -12,9 +12,9 @@ gap is loud. Three increments close it, in this order.
 
 ## Dynamics
 
-Accepted, planned in [`dynamics.md`](dynamics.md) §7: v2.0 accelerations and reactions, v2.1
-time stepping with projection and the energy test, v2.2 four corners and a load case. Config
-for it already parses and validates.
+v2.0 — accelerations and reactions — is implemented (`otkd.problem.dynamics`) and tested.
+Remaining, per [`dynamics.md`](dynamics.md) §7: v2.1 time stepping with projection and the
+energy test, then v2.2 four corners and a load case.
 
 ## The UI
 

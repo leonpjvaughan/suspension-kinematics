@@ -214,24 +214,46 @@ ignoring it would be worse: a file that parses is a file a reader believes.
 Written so the work is bounded and testable, in the order that keeps each stage verifiable.
 Nothing here is implemented yet; the config (`geometry.dynamics`) already parses and validates.
 
-### v2.0 — accelerations and reactions, no integration
+### v2.0 — accelerations and reactions, no integration — **implemented**
 
 | task | detail |
 |---|---|
 | `Problem.mass(q, g)` | block-diagonal per body: `diag(m I₃, 4 Gᵀ I G)` with `G(q)` the 3×4 map `ω = 2G(q)q̇` for a unit quaternion. Small, polynomial. |
 | `Problem.forces(q, q̇, g, t)` | gravity, loads (through the existing point Jacobians), springs `−g_i/c_i ∇g_i`, damping `−d_i ġ_i ∇g_i`, actuator efforts. |
 | `Problem.gamma(q, q̇, g, t)` | `−q̇ᵀ∇²Φ q̇`. Compute it as two Jacobian evaluations along `q̇`, not by lambdifying 21 Hessians: the same trick the equilibrium solve already relies on. |
-| KKT solve | `[[M, Φ_qᵀ], [Φ_q, 0]] [q̈; λ] = [f; γ]` with the existing dense LU. `λ` is the per-row reaction — the number a suspension engineer wants. |
-| outputs | `q̈`, `λ` per row, and the existing pose outputs. |
+| KKT solve | `[[M, Φ_qᵀ], [Φ_q, 0]] [q̈; λ] = [f; γ]` solved dense. `λ` is the per-row reaction — the number a suspension engineer wants. |
+| outputs | `q̈` and `λ` per row, via `otkd.problem.dynamics.accelerations(...)`. |
 
-Acceptance, all cheap to write:
+As built, in `src/otkd/problem/dynamics.py`:
 
-1. **A static equilibrium stays static.** The design pose, gravity balanced by the driver and
-   the tyre load, gives `q̈ ≈ 0` and `λ` equal to the hand calculation for a two-force member.
-2. **Prescribed motion matches kinematics.** Drive the arm along the existing sweep, take `q̈`
-   from finite differences of the solved poses, and require agreement to `1e-6`.
-3. **A frictionless swing conserves energy** to the stated tolerance — the v2.1 test, but the
-   energy expression is written in v2.0.
+```python
+from otkd.problem import dynamics
+
+state = dynamics.accelerations(problem, q, qdot,
+                               loads=[("up", "wc", np.array([0, 0, -3500.0]))],
+                               gravity=np.array([0, 0, -9.81]))
+state.qddot            # (n,)
+state.reactions        # {"lca-ground.tx": ..., "tie-rod.length": ..., ...}
+state.force            # the generalised force before the constraints react
+```
+
+`M` is assembled per body from `Jv = [I, −[r]× W]` and `Jω = [0, W]`, where `ω = W(q)q̇` and `r`
+is the centre of mass: the translation and rotation of one body couple through the offset, so
+the block is 7×7 and dense. Springs and dampers are forces, not constraints, so `Φ` here is the
+hard rows, the normalisation and the drivers — the same set the kinematic solver uses minus the
+springs.
+
+Acceptance, and what the tests in `tests/test_dynamics.py` actually assert:
+
+1. **The equilibrium has no acceleration.** A compliant corner solved for equilibrium under a
+   load, with gravity switched off, gives `‖q̈‖∞ < 1e-6` and finite reactions in every row.
+2. **The acceleration satisfies the velocity constraint to third order.** With
+   `v = dq/dθ` from finite differences of solved poses, `Φ(q + h v + ½h²q̈; θ + h)` is smaller
+   than `Φ(q + h v; θ + h)` by about `h` — the independent check that `γ` is the true second
+   derivative. The drive must move with the state, or the driver row leaves an `O(h)` term.
+3. **The mass matrix is symmetric, positive semi-definite, and positive on the motion**; a
+   translation-only velocity gives `½ m v²` summed over the bodies.
+4. Energy conservation is v2.1's test, once there is a trajectory to conserve it over.
 
 ### v2.1 — time stepping
 
