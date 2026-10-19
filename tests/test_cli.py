@@ -73,8 +73,10 @@ def test_compile_latex_uses_readable_names(tmp_path):
 
 
 def test_emit_wasm_refuses_a_model_it_cannot_solve(tmp_path):
-    root = build(tmp_path, "double-wishbone-compliant")
+    root = build(tmp_path, "double-wishbone")
+    topology = (root / "topology.yaml").read_text()
+    (root / "topology.yaml").write_text(topology.split("actuators:")[0])
     result = run("emit", str(root), str(tmp_path / "kernel"), "--format", "wasm", "--quiet")
     assert result.returncode == 1
-    assert "equilibrium" in result.stderr
+    assert "under-determined" in result.stderr
     assert "Traceback" not in result.stderr

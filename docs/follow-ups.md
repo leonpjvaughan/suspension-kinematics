@@ -10,18 +10,6 @@ The kernel currently compiles the square Newton path. The emitter *refuses* a re
 compliant model with a message rather than emitting a solver for the wrong equations, so the
 gap is loud. Three increments close it, in this order.
 
-### 1. SVD and the compliant equilibrium
-
-**What.** A Jacobi or Householder SVD for singular values and the null space, then the
-equilibrium root find of §4 in the kernel. This is the interactive stiffness slider.
-
-**Why deferred.** It is the largest of the three and the only one whose Python side is still
-changing shape (the solver moved from `lm` to `trf` this round).
-
-**Done when.** The stiffness ladder in the browser matches the Python ladder to `1e-6` on
-camber across the compliance range, and a singular Jacobian returns the same status code the
-Python solver raises on.
-
 ## Dynamics
 
 Accepted, planned in [`dynamics.md`](dynamics.md) §7: v2.0 accelerations and reactions, v2.1
@@ -46,6 +34,11 @@ it.
 
 ## Done
 
+- **Kernel equilibrium**: a compliant model now gets Newton on the equilibrium residual with the
+  load case baked in, and agrees with Python's solver to `1e-12` on the pose. The free direction
+  is found by one linear solve rather than an SVD, which is why this arrived without a singular
+  value decomposition. The SVD *diagnosis* is deliberately still Python-only — §3's figure shows
+  its result, and a browser has no use for an interactive one.
 - **Kernel least squares** (`solver: "redundant"` in `kernel.json`): Levenberg–Marquardt on the
   normal equations, selected by the model's own classification. It agrees with Python's least
   squares to `1e-15` on the pose and `1e-13` on the metrics.

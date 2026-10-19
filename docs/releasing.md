@@ -93,7 +93,14 @@ rename: the key is unchanged, the value is the generator's name.
   tag is created (it should not — the tag is last), delete the tag and push a fix; the next push
   computes the same version again.
 - Branch protection must let the workflow push a tag. It does not push commits, so it does not
-  need to bypass protection on `main`.
+  need to bypass protection on `main`. Tags may be created but not moved or deleted
+  ([`security.md`](security.md)).
+- **After each release, reset `dev` to `main`.** `main` is squash-only, so the release commit is a
+  new commit that `dev` does not have; the content is identical, so
+  `git fetch && git reset --hard origin/main` is the whole reconciliation. Do this before the
+  next piece of work, or the next pull request carries a spurious merge.
+- Dependabot opens its pull requests against `dev`, so a dependency bump takes the same path as
+  any other change.
 
 ## What a consumer pins
 

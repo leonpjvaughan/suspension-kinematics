@@ -96,6 +96,9 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
         "points": points,
         "axes": axes,
         "numbers": [_number_descriptor(key) for key in numbers],
+        # The design values for those slots, so a page does not have to reconstruct them.
+        # `null` means "derive it": a missing tie-rod length defaults to the design separation.
+        "default_numbers": _default_numbers(problem, numbers),
         "rows": [{"name": row.name, "unit": row.unit, "group": row.group} for row in problem.rows],
         "drive": [drive.actuator for drive in problem.drives],
         "wasm": wasm_path.name if wasm_path else None,
@@ -122,7 +125,7 @@ def _supported_kind(problem: Problem) -> str:
     from ..solvers.system import System
 
     kind = System(problem, problem.numbers(), problem.theta0()).classify()
-    if kind in ("square", "redundant"):
+    if kind in ("square", "redundant", "equilibrium"):
         return kind
     hint = {
         "equilibrium": "a compliant model needs the equilibrium root-find, which is not compiled yet",
@@ -353,7 +356,12 @@ def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, n
         "}",
         "",
     ]
-    lines += _newton_solver() if kind == "square" else _least_squares_solver()
+    if kind == "square":
+        lines += _newton_solver()
+    elif kind == "redundant":
+        lines += _least_squares_solver()
+    else:
+        lines += _equilibrium_solver(problem, model)
     return "\n".join(lines)
 
 
@@ -507,6 +515,163 @@ def _least_squares_solver() -> list[str]:
         "}",
         "",
     ]
+
+
+def _equilibrium_solver(problem: Problem, model: Model) -> list[str]:
+    """Newton on the equilibrium residual, for a compliant model.
+
+    `r = [constrained rows ; Ẑ·∇Π / f_ref]`, where `Ẑ` spans the null space of the constrained
+    Jacobian. That null space is one-dimensional and is found by one linear solve rather than an
+    SVD: appending the *spring row's* gradient as an extra row makes the matrix square and
+    non-singular, and the solution of `[J_c ; ∇g_spring] u = e_last` is a vector with `J_c u = 0`.
+
+    The Jacobian of `r` is differentiated numerically: the projected potential's analytic
+    derivative contains `(∂Z/∂q)ᵀ∇Π`, which is the term that stalled the project's Python
+    solver, and the same decision applies here.
+    """
+    springs = [i for i, row in enumerate(problem.rows) if row.group == "spring"]
+    constrained = [i for i, row in enumerate(problem.rows) if row.group != "spring"]
+    if not springs:
+        raise ValueError("an equilibrium kernel needs at least one compliant component")
+    if len(constrained) != problem.n - 1:
+        raise ValueError(
+            f"an equilibrium kernel expects one free direction; this model has {problem.n - len(constrained)}"
+        )
+    compliance_index = []
+    for index in springs:
+        joint, component = problem.rows[index].name.split(".", 1)
+        compliance_index.append(problem._gkey.index(("compliance", joint, component, 0)))
+
+    loads = []
+    for load in (model.study.loads if model.study else []):
+        if load.law.kind != "constant":
+            raise ValueError("the kernel takes constant loads only")
+        site = problem.topology.sites[load.site]
+        body = problem.resolved.point_body[site.origin]
+        loads.append((body, site.origin, list(load.force)))
+    force_scale = max(1.0, sum(sum(abs(v) for v in force) for _, _, force in loads))
+
+    mapping = _symbol_map(problem)
+    n = problem.n
+
+    def jacobian_rows(body: str, point: str) -> list[str]:
+        p_, r_ = problem._pose[body]
+        expr = p_ + r_ * problem._point_sym[point]
+        jac = expr.jacobian(problem.q)
+        return [_rust(jac[k, j].xreplace(mapping)) for k in range(3) for j in range(n)]
+
+    rows = ",".join(str(i) for i in constrained)
+    spring_rows = ",".join(str(i) for i in springs)
+    spring_c = ",".join(str(i) for i in compliance_index)
+
+    lines = [
+        f"const ROWS: usize = {len(constrained)};",
+        f"const ROW_INDEX: [usize; ROWS] = [{rows}];",
+        f"const SPRING_ROWS: [usize; {len(springs)}] = [{spring_rows}];",
+        f"const SPRING_C: [usize; {len(springs)}] = [{spring_c}];",
+        f"const FORCE_SCALE: f64 = {force_scale:.17e};",
+        "",
+        "#[inline]",
+        "fn maxabs(v: &[f64; N]) -> f64 {",
+        "    let mut worst = 0.0f64;",
+        "    for i in 0..N { let a = v[i].abs(); if a > worst { worst = a; } }",
+        "    worst",
+        "}",
+        "",
+        "#[inline]",
+        "fn equilibrium_rows(q: &[f64; N], g: &[f64; G], t: &[f64; A]) -> [f64; N] {",
+        "    let mut out = [0.0f64; M];",
+        "    let mut jac = [0.0f64; N*M];",
+        "    compute_inner(q, g, t, &mut out, &mut jac);",
+        "    let mut grad = [0.0f64; N];",
+        "    for s in 0..SPRING_ROWS.len() {",
+        "        let scale = out[SPRING_ROWS[s]] / g[SPRING_C[s]];",
+        "        for j in 0..N { grad[j] += scale * jac[SPRING_ROWS[s]*N + j]; }",
+        "    }",
+    ]
+    for body, point, force in loads:
+        values = jacobian_rows(body, point)
+        lines.append("    let jx = [")
+        for k in range(3):
+            chunk = ", ".join(values[k * n : (k + 1) * n])
+            lines.append(f"        {chunk},")
+        lines.append("    ];")
+        for k, name in enumerate("xyz"):
+            if force[k]:
+                lines.append(
+                    f"    for j in 0..N {{ grad[j] -= jx[{k}*N + j] * {float(force[k]):.17e}; }}"
+                )
+    lines += [
+        "    let mut rows = [0.0f64; ROWS];",
+        "    for i in 0..ROWS { rows[i] = out[ROW_INDEX[i]]; }",
+        "    // one linear solve gives the free direction: J_c u = 0, with the spring gradient",
+        "    // appended so the matrix is square and the result is not the zero vector.",
+        "    let mut a = [0.0f64; N*N];",
+        "    let mut b = [0.0f64; N];",
+        "    for i in 0..ROWS {",
+        "        for j in 0..N { a[i*N + j] = jac[ROW_INDEX[i]*N + j]; }",
+        "    }",
+        "    for j in 0..N { a[ROWS*N + j] = jac[SPRING_ROWS[0]*N + j]; }",
+        "    for j in 0..N { b[j] = 0.0; }",
+        "    b[N - 1] = 1.0;",
+        "    let mut residual = [0.0f64; N];",
+        "    for i in 0..ROWS { residual[i] = rows[i]; }",
+        "    residual[N - 1] = 0.0;",
+        "    if solve_linear(&mut a, &mut b) {",
+        "        let mut norm = 0.0f64;",
+        "        for j in 0..N { norm += b[j] * b[j]; }",
+        "        norm = norm.sqrt();",
+        "        let mut projected = 0.0f64;",
+        "        for j in 0..N { projected += b[j] * grad[j]; }",
+        "        residual[N - 1] = projected / (norm * FORCE_SCALE);",
+        "    } else {",
+        "        residual[N - 1] = f64::NAN;",
+        "    }",
+        "    residual",
+        "}",
+        "",
+        "/// Newton on the equilibrium residual. Returns its infinity norm, or -1 if the",
+        "/// constrained Jacobian was singular.",
+        "#[no_mangle]",
+        'pub extern "C" fn solve(iters: i32) -> f64 {',
+        *_solver_prelude(),
+        "    let mut r = equilibrium_rows(&q, &g, &t);",
+        "    let mut worst = maxabs(&r);",
+        "    for _ in 0..iters {",
+        "        if worst < 1e-10 { break; }",
+        "        let mut a = [0.0f64; N*N];",
+        "        for j in 0..N {",
+        "            let h = 1e-7 * (1.0 + q[j].abs());",
+        "            let mut qp = q;",
+        "            let mut qm = q;",
+        "            qp[j] += h;",
+        "            qm[j] -= h;",
+        "            let rp = equilibrium_rows(&qp, &g, &t);",
+        "            let rm = equilibrium_rows(&qm, &g, &t);",
+        "            for i in 0..N { a[i*N + j] = (rp[i] - rm[i]) / (2.0 * h); }",
+        "        }",
+        "        let mut step = r;",
+        "        for i in 0..N { step[i] = -step[i]; }",
+        "        if !solve_linear(&mut a, &mut step) { return -1.0; }",
+        "        let base = worst;",
+        "        let mut alpha = 1.0;",
+        "        let mut moved = false;",
+        "        for _ in 0..12 {",
+        "            let mut trial = q;",
+        "            for i in 0..N { trial[i] += alpha * step[i]; }",
+        "            let candidate = equilibrium_rows(&trial, &g, &t);",
+        "            let value = maxabs(&candidate);",
+        "            if value < base { q = trial; r = candidate; worst = value; moved = true; break; }",
+        "            alpha *= 0.5;",
+        "        }",
+        "        if !moved { break; }",
+        "    }",
+        "    unsafe { for i in 0..N { MEM[O_Q + i] = q[i]; } }",
+        "    worst",
+        "}",
+        "",
+    ]
+    return lines
 
 
 def _metrics_block(problem: Problem, model: Model) -> list[str]:
@@ -668,6 +833,19 @@ def _world_block(problem: Problem, model: Model, points: list[str]) -> list[str]
     lines = [f"    let {symbol} = {_rust(expression)};" for symbol, expression in replacements]
     lines += [f"    unsafe {{ MEM[O_WORLD + {i}] = {_rust(reduced[i])}; }}" for i in range(len(exprs))]
     return lines
+
+
+def _default_numbers(problem: Problem, numbers: list[tuple]) -> list:
+    resolved = problem.resolved
+    values: list = []
+    for key in numbers:
+        if key[0] == "length":
+            values.append(resolved.length.get(key[1]))
+        elif key[0] == "gap":
+            values.append(resolved.gap.get(key[1]))
+        else:
+            values.append(resolved.compliance.get((key[1], key[2])))
+    return values
 
 
 def _number_descriptor(key: tuple) -> dict:

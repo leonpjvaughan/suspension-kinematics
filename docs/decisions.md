@@ -460,3 +460,22 @@ repository, `uv build` packages the project directory *including* `dist/` — so
 contained the first build's archive, and the two could never match. The sdist now excludes
 `/dist*`, `/.venv`, `/build` and the pytest cache, and the release is reproducible with the
 output inside the tree. Build output in the source tree is the kind of thing that works once.
+
+---
+
+## Round 15: the compliant equilibrium, compiled (accepted)
+
+1. **The last solver is in the kernel.** A compliant model gets Newton on
+   `[constrained rows ; Ẑ·∇Π / f_ref]`, with the study's load case baked in as constants, and it
+   agrees with the Python solver to `1e-12` on the pose and `1e-10` on the metrics.
+2. **No SVD was needed.** The free direction is one-dimensional, so appending the spring row's
+   gradient to the constrained Jacobian makes a square, non-singular matrix whose solution spans
+   the null space — one linear solve with the LU the kernel already had. The SVD diagnosis stays
+   in Python because §3's figure shows its result rather than asking a reader to move a slider
+   through a decomposition.
+3. **The projected potential is differentiated numerically**, by central differences, for the
+   same reason the Python solver does: the analytic block contains `(∂Z/∂q)ᵀ∇Π`, which is the
+   term that stalled both implementations.
+4. **The bundle is self-describing.** `kernel.json` carries `solver` and `default_numbers` — the
+   design values for the length, gap and compliance slots — so a page can pack a geometry without
+   reconstructing the emitter's conventions.
