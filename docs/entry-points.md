@@ -53,7 +53,7 @@ Installed as `otkd` (`[project.scripts]`). The verbs are the pipeline, one per s
 |---|---|
 | `otkd check <model> [--study PATH]` | parse, resolve names, print every row's residual at the design position, then rank, mobility and redundancy |
 | `otkd compile <model> [--format text\|latex\|json]` | print the problem itself: residual rows, units, Jacobian, sparsity |
-| `otkd solve <model> [--study PATH] [--at VALUE] [--json PATH] [--csv PATH]` | run the study, or one frame with `--at` |
+| `otkd solve <model> [--study PATH] [--at VALUE] [--json PATH] [--csv PATH]` | run the study — a sweep, or a trajectory when the study is `analysis: dynamics` |
 | `otkd emit <model> <out> [--format js\|json\|wasm] [--study PATH]` | write the artefact. `js` is the book's contract (`HANDOFF.md` §7); `wasm` writes a directory containing a generated Rust/WASM kernel ([`wasm.md`](wasm.md)) |
 | `otkd kinds <model>` | the kinds *your* library defines, with each component's mode and row count |
 | `otkd ui <model>` | the config UI ([`ui.md`](ui.md)) |
@@ -142,10 +142,12 @@ That is the same promise the config split makes — one topology, many geometrie
 literally rather than approximately. It is also the reason `solve` is cheap enough to sit
 behind a CLI: the slow step is per topology, the fast step is per sweep.
 
-Dynamics is a state-level entry point rather than a study, because there is no time stepping
-yet: `otkd.problem.dynamics.accelerations(problem, q, qdot, loads=..., gravity=...)` returns the
-acceleration and the reaction in every constrained row. No CLI verb and no study shape until v2.1
-([`dynamics.md`](dynamics.md) §7).
+Dynamics has two entry points: a state-level function,
+`otkd.problem.dynamics.accelerations(problem, q, qdot, loads=..., gravity=...)`, returning the
+acceleration and the reaction in every constrained row; and a study with `analysis: dynamics`,
+`duration` and `steps`, which `otkd solve` integrates and prints, and `--json` writes as a
+trajectory. `emit` refuses a dynamics study, because the export contract is a sweep.
+[`dynamics.md`](dynamics.md) §7.
 
 The advanced surface (`Problem.rows`, `.jac`, `.diagnose`) is a function of `(q, geometry)`
 and is what `newton`, `least_squares` and `svd_diagnose` consume

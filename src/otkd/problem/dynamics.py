@@ -202,3 +202,138 @@ def accelerations(
     multipliers = solution[problem.n :]
     reactions = {problem.rows[index].name: float(value) for index, value in zip(rows, multipliers)}
     return Accelerations(qddot=solution[: problem.n], reactions=reactions, force=force)
+
+
+@dataclass(frozen=True)
+class Trajectory:
+    t: np.ndarray
+    q: np.ndarray
+    qdot: np.ndarray
+    energy: np.ndarray
+    constraint: np.ndarray
+
+
+def energy(
+    problem: Problem,
+    q: np.ndarray,
+    qdot: np.ndarray,
+    gravity: np.ndarray | None = None,
+    loads: list[tuple[str, str, np.ndarray]] | None = None,
+) -> tuple[float, float, float]:
+    """Kinetic, potential and total energy — the quantity a frictionless run must conserve.
+
+    The applied loads are part of the potential: a constant force `F` at a point `x` contributes
+    `−F·x`. Without that term the "energy" of a loaded mechanism is not conserved at all, and a
+    conservation test would be measuring the load's work instead of the integrator.
+    """
+    model = problem.model
+    dynamics_block = model.geometry.dynamics
+    if dynamics_block is None:
+        raise SolverError("this model has no `dynamics:` block, so it has no energy")
+    g = problem.numbers()
+    kinetic = 0.5 * float(qdot @ mass_matrix(problem, q, g) @ qdot)
+
+    potential = 0.0
+    values = problem.evaluate(q, g, problem.theta0())
+    compliance = problem.compliance(g)
+    for index, row in enumerate(problem.rows):
+        if row.group != SPRING:
+            continue
+        joint, component = row.name.split(".", 1)
+        c = compliance.get((joint, component), 0.0)
+        if c:
+            potential += 0.5 * values[index] ** 2 / c
+
+    weight = np.asarray(dynamics_block.gravity if gravity is None else gravity, dtype=float)
+    for body in problem.moving:
+        numbers = dynamics_block.bodies.get(body)
+        if numbers is None:
+            continue
+        block = _body_indices(problem, body)
+        w, x, y, z = q[block][3:7]
+        offset = (
+            problem.resolved.points[numbers.com]
+            if isinstance(numbers.com, str)
+            else np.asarray(numbers.com, dtype=float)
+        )
+        position = q[block][:3] + _rotation(w, x, y, z) @ np.asarray(offset, dtype=float)
+        potential -= numbers.mass * float(weight @ position)
+
+    if loads:
+        world = problem.world_points(q)
+        for _, point, applied in loads:
+            potential -= float(np.asarray(applied, dtype=float) @ world[point])
+    return kinetic, potential, kinetic + potential
+
+
+def _project(problem: Problem, q: np.ndarray, qdot: np.ndarray, g: np.ndarray, theta: np.ndarray):
+    """Put the state back on the manifold: `Φ(q) = 0` and `Φ_q q̇ = 0`."""
+    rows = [i for i, row in enumerate(problem.rows) if row.group != SPRING]
+    for _ in range(4):
+        values = problem.evaluate(q, g, theta)[rows]
+        if np.max(np.abs(values)) < 1e-13:
+            break
+        jac = problem.jacobian(q, g, theta)[rows]
+        step, *_ = np.linalg.lstsq(jac, -values, rcond=None)
+        q = q + step
+    for _ in range(2):
+        jac = problem.jacobian(q, g, theta)[rows]
+        drift = jac @ qdot
+        if np.max(np.abs(drift)) < 1e-13:
+            break
+        step, *_ = np.linalg.lstsq(jac, -drift, rcond=None)
+        qdot = qdot + step
+    return q, qdot
+
+
+def integrate(
+    problem: Problem,
+    q: np.ndarray,
+    qdot: np.ndarray,
+    *,
+    duration: float,
+    steps: int,
+    loads: list[tuple[str, str, np.ndarray]] | None = None,
+    gravity: np.ndarray | None = None,
+    theta: np.ndarray | None = None,
+) -> Trajectory:
+    """Classical RK4 with projection after every step.
+
+    Projection is not an ornament: RK4 drifts off `Φ = 0` by `O(h⁴)` per step, which over a few
+    hundred steps is a visible violation of a rigid link. Projecting `q` onto `Φ = 0` and `q̇` onto
+    `Φ_q q̇ = 0` after each accepted step keeps the constraint error at roundoff and is what makes
+    the energy test meaningful — the alternative, a Baumgarte term, trades constraint drift for
+    energy drift.
+    """
+    if steps < 2 or duration <= 0:
+        raise SolverError("an integration needs a positive duration and at least two steps")
+    g = problem.numbers()
+    theta = problem.theta0() if theta is None else theta
+    h = duration / (steps - 1)
+    q = np.array(q, dtype=float)
+    qdot = np.array(qdot, dtype=float)
+
+    def derivative(state_q, state_v):
+        return state_v, accelerations(problem, state_q, state_v, loads=loads, gravity=gravity, theta=theta).qddot
+
+    times = np.linspace(0.0, duration, steps)
+    states = np.zeros((steps, problem.n))
+    velocities = np.zeros((steps, problem.n))
+    energies = np.zeros(steps)
+    constraints = np.zeros(steps)
+    rows = [i for i, row in enumerate(problem.rows) if row.group != SPRING]
+
+    for index, time in enumerate(times):
+        if index > 0:
+            k1q, k1v = derivative(q, qdot)
+            k2q, k2v = derivative(q + 0.5 * h * k1q, qdot + 0.5 * h * k1v)
+            k3q, k3v = derivative(q + 0.5 * h * k2q, qdot + 0.5 * h * k2v)
+            k4q, k4v = derivative(q + h * k3q, qdot + h * k3v)
+            q = q + (h / 6.0) * (k1q + 2.0 * k2q + 2.0 * k3q + k4q)
+            qdot = qdot + (h / 6.0) * (k1v + 2.0 * k2v + 2.0 * k3v + k4v)
+            q, qdot = _project(problem, q, qdot, g, theta)
+        states[index] = q
+        velocities[index] = qdot
+        energies[index] = energy(problem, q, qdot, gravity, loads)[2]
+        constraints[index] = float(np.max(np.abs(problem.evaluate(q, g, theta)[rows])))
+    return Trajectory(t=times, q=states, qdot=velocities, energy=energies, constraint=constraints)

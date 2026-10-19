@@ -76,6 +76,9 @@ class Study(BaseModel):
     analysis: Literal["kinematics", "dynamics"] = "kinematics"
     drivers: list[Driver] = []
     loads: list[Load] = []
+    #: A dynamics study's time span and output count. Required for `analysis: dynamics`.
+    duration: float | None = None
+    steps: int | None = None
     #: Row names to remove, e.g. `lca-front.tx`. Must have been redundant.
     drop: list[str] = []
     seed: Literal["previous", "design"] = "previous"

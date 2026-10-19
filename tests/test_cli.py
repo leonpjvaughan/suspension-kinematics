@@ -8,8 +8,9 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
-from tests.helpers import build
+from tests.helpers import add_dynamics, build
 
 
 def run(*args: str) -> subprocess.CompletedProcess:
@@ -80,3 +81,30 @@ def test_emit_wasm_refuses_a_model_it_cannot_solve(tmp_path):
     assert result.returncode == 1
     assert "under-determined" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def test_solve_a_dynamics_study(tmp_path):
+    root = build(tmp_path, "double-wishbone-compliant")
+    add_dynamics(root)
+    study = {
+        "analysis": "dynamics",
+        "duration": 0.05,
+        "steps": 21,
+        "loads": [{"site": "wc", "force": [1800.0, 0.0, -3500.0]}],
+    }
+    (root / "study.yaml").write_text(yaml.safe_dump(study, sort_keys=False))
+
+    result = run("solve", str(root))
+    assert result.returncode == 0, result.stderr
+    assert "energy" in result.stdout
+
+    target = tmp_path / "trajectory.json"
+    written = run("solve", str(root), "--json", str(target), "--quiet")
+    assert written.returncode == 0, written.stderr
+    payload = json.loads(target.read_text())
+    assert payload["meta"]["analysis"] == "dynamics"
+    assert len(payload["trajectory"]) == 21
+
+    refused = run("emit", str(root), str(tmp_path / "out.js"), "--quiet")
+    assert refused.returncode == 1
+    assert "trajectory" in refused.stderr

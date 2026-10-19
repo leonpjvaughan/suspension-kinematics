@@ -255,12 +255,31 @@ Acceptance, and what the tests in `tests/test_dynamics.py` actually assert:
    translation-only velocity gives `½ m v²` summed over the bodies.
 4. Energy conservation is v2.1's test, once there is a trajectory to conserve it over.
 
-### v2.1 — time stepping
+### v2.1 — time stepping — **implemented**
 
 RK4 with projection: after each step, project `q` onto `Φ = 0` and `|q| = 1`, and `q̇` onto
-`Φ_q q̇ = 0`. `scipy` has no DAE solver, so this is 60 lines, not a dependency. Then the energy
-test from v2.0, and a `duration`/`steps` study shape in `study.yaml` (`analysis: dynamics`,
-already rejected with a message that names this section).
+`Φ_q q̇ = 0`. `scipy` has no DAE solver, so this is 60 lines, not a dependency.
+
+As built: `dynamics.integrate(problem, q, qdot, duration=..., steps=..., loads=...)` returns a
+`Trajectory` of times, states, velocities, energies and the constraint residual at each step;
+`dynamics.energy(...)` includes the applied loads' potential (`−F·x`), without which a loaded
+mechanism's "energy" is not conserved at all. The tests take a frictionless swing from a
+kinematic equilibrium with a kick along the free direction and require the energy to hold to
+`1e-6` relative and the constraint to `1e-9`.
+
+A **dynamics study** is now a file shape:
+
+```yaml
+analysis: dynamics
+duration: 0.4
+steps: 401
+loads:
+  - {site: wc, force: [1800, 0, -3500], law: {kind: constant}}
+```
+
+`otkd solve` integrates it from the design pose with zero velocity and prints the energy and the
+constraint residual; `--json` writes the trajectory. `otkd emit` refuses a dynamics study: its
+payload is a trajectory, not a sweep, and the book's export contract is about sweeps.
 
 ### v2.2 — the corner becomes a car
 
