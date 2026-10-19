@@ -20,6 +20,7 @@ import otkd
 from otkd.emitters.wasm import TARGET, emit_wasm
 from otkd.analysis import outputs
 from otkd.problem.compile import Problem
+from otkd.solvers.equilibrium import equilibrium
 from otkd.solvers.least_squares import least_squares
 from otkd.solvers.newton import newton
 from otkd.solvers.system import System
@@ -36,8 +37,17 @@ def _reference(model):
     frames = []
     for theta in THETAS:
         system = System(problem, g, problem.theta_for({"lca-drive": theta}))
-        if system.classify() == "redundant":
+        kind = system.classify()
+        if kind == "redundant":
             q = least_squares(system, problem.q0())[0]
+        elif kind == "equilibrium":
+            loads = [
+                (problem.resolved.point_body[problem.topology.sites[load.site].origin],
+                 problem.topology.sites[load.site].origin,
+                 np.asarray(load.force, dtype=float))
+                for load in (model.study.loads if model.study else [])
+            ]
+            q = equilibrium(system, problem.q0(), loads)[0]
         else:
             q = newton(system, problem.q0())[0]
         metrics = outputs.compute(problem, q, reference)
@@ -111,6 +121,8 @@ def _emit_and_run(tmp_path_factory, name: str):
     if not _node_available():
         pytest.skip("node is not installed: cannot run the module")
     reference = _reference(model)
+    manifest = json.loads((out / "kernel.json").read_text())
+    reference["numbers"] = manifest["default_numbers"]
     (out / "reference.json").write_text(json.dumps(reference))
     (out / "run.mjs").write_text(SCRIPT)
     result = subprocess.run(
@@ -129,6 +141,11 @@ def kernel(tmp_path_factory):
 @pytest.fixture(scope="module")
 def redundant_kernel(tmp_path_factory):
     return _emit_and_run(tmp_path_factory, "double-wishbone-two-leg")
+
+
+@pytest.fixture(scope="module")
+def compliant_kernel(tmp_path_factory):
+    return _emit_and_run(tmp_path_factory, "double-wishbone-compliant")
 
 
 def test_the_emitter_writes_a_buildable_kernel(kernel):
@@ -197,10 +214,24 @@ def test_the_redundant_kernel_matches_least_squares(redundant_kernel):
             assert abs(mine["metrics"][name] - theirs["metrics"][name]) < 1e-9, name
 
 
-def test_a_compliant_model_is_refused_rather_than_miscompiled(tmp_path):
-    """The equilibrium root-find is not compiled yet; the emitter must say so, not emit."""
-    model = otkd.load(build(tmp_path, "double-wishbone-compliant"))
-    with pytest.raises(ValueError, match="equilibrium"):
+def test_the_compliant_kernel_matches_the_equilibrium(compliant_kernel):
+    """The equilibrium is solved in the kernel, with the load case baked in."""
+    out, result, _ = compliant_kernel
+    manifest = json.loads((out / "kernel.json").read_text())
+    assert manifest["solver"] == "equilibrium"
+    reference = json.loads((out / "reference.json").read_text())
+    assert result["status"] == 0
+    for mine, theirs in zip(result["frames"], reference["frames"]):
+        assert mine["residual"] < 1e-8
+        assert np.max(np.abs(np.array(mine["q"]) - np.array(theirs["q"]))) < 1e-8
+        for name in ("camber", "toe", "track"):
+            assert abs(mine["metrics"][name] - theirs["metrics"][name]) < 1e-7, name
+
+
+def test_an_under_determined_model_is_refused(tmp_path):
+    model = otkd.load(build(tmp_path, "double-wishbone"))
+    model.topology.actuators = []
+    with pytest.raises(ValueError, match="under-determined"):
         emit_wasm(model, tmp_path / "kernel", build=False)
 
 
