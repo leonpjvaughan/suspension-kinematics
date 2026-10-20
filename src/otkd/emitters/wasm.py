@@ -111,7 +111,7 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
         module = base64.b64encode(wasm_path.read_bytes()).decode("ascii")
     (target / "kernel.js").write_text(_js_glue(manifest, module))
     _write_provenance(target, model, layout, wasm_path)
-    _copy_sources(target, model)
+    copy_sources(target, model)
     return {"dir": str(target), "wasm": str(wasm_path) if wasm_path else None, "note": note}
 
 
@@ -139,16 +139,46 @@ def _supported_kind(problem: Problem) -> str:
     raise ValueError(f"the WASM kernel cannot solve this model yet: it is {kind!r}; {hint}")
 
 
+#: The config files a model is built from, in the order a bundle lists them.
+SOURCE_KEYS = ("topology", "geometry", "study", "constraints")
+
+
+def sources(model: Model) -> dict[str, str]:
+    """The four config files, by name, with the digest of their bytes.
+
+    The library is the one a consumer cannot infer: it lives outside the model directory, so a
+    release that changed what `spring` means would change the model without changing a model file.
+    """
+    digests = {}
+    for key in SOURCE_KEYS:
+        path = model.files.get(key)
+        if path and Path(path).exists():
+            digests[Path(path).name] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    return digests
+
+
+def copy_sources(target: Path, model: Model) -> dict[str, str]:
+    """Copy the four config files into `target/source/` and return their digests.
+
+    An artefact with no inputs cannot be audited. For a dynamics model the sources are the *whole*
+    of its provenance — it ships no payload and no kernel — which is why this is not the kernel's
+    private business.
+    """
+    source = target / "source"
+    source.mkdir(parents=True, exist_ok=True)
+    for key in SOURCE_KEYS:
+        path = model.files.get(key)
+        if path and Path(path).exists():
+            shutil.copy(path, source / Path(path).name)
+    return sources(model)
+
+
 def _write_provenance(target: Path, model: Model, layout: Layout, wasm_path: Path | None) -> None:
     from .. import __version__
 
     rustc = shutil.which("rustc")
     version = subprocess.run([rustc, "--version"], capture_output=True, text=True).stdout.strip() if rustc else ""
-    sources = {}
-    for key in ("topology", "geometry", "study", "constraints"):
-        path = model.files.get(key)
-        if path and Path(path).exists():
-            sources[Path(path).name] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    sources_ = sources(model)
     provenance = {
         "model": model.topology.id,
         "generator": f"otkd {__version__}",
@@ -156,20 +186,10 @@ def _write_provenance(target: Path, model: Model, layout: Layout, wasm_path: Pat
         "target": TARGET,
         "abi": "otkd-kernel-2",
         "layout": layout.as_dict(),
-        "sources": sources,
+        "sources": sources_,
         "wasm_sha256": hashlib.sha256(wasm_path.read_bytes()).hexdigest() if wasm_path else None,
     }
     (target / "provenance.json").write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n")
-
-
-def _copy_sources(target: Path, model: Model) -> None:
-    """Copy the four config files beside the kernel: an artefact with no inputs cannot be audited."""
-    source = target / "source"
-    source.mkdir(exist_ok=True)
-    for key in ("topology", "geometry", "study", "constraints"):
-        path = model.files.get(key)
-        if path and Path(path).exists():
-            shutil.copy(path, source / Path(path).name)
 
 
 # -- Rust source -----------------------------------------------------------------------

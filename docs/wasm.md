@@ -245,7 +245,8 @@ not an assertion: the workflow compares the two builds.
 
 ```
 otkd-0.1.0/
-  MANIFEST.json   generator, git commit, python and rustc versions, per-model status
+  MANIFEST.json   generator, git commit, python and rustc versions, per-model status, and each
+                  model's four config digests (`bundle: otkd-bundle-2`)
   SHA256SUMS      every file's digest
   package/        otkd-0.1.0-py3-none-any.whl and otkd-0.1.0.tar.gz
   models/double-wishbone/out.js                 the static payload
@@ -254,7 +255,9 @@ otkd-0.1.0/
   models/double-wishbone/kernel/kernel.rs       generated source (provenance)
   models/double-wishbone/kernel/kernel.wasm     the module (provenance; inlined in kernel.js)
   models/double-wishbone/kernel/provenance.json input hashes, toolchain
-  models/double-wishbone/kernel/source/*.yaml   the four config files
+  models/double-wishbone/source/*.yaml          the four config files, and their digests in the
+                                                manifest — the only provenance a dynamics model has
+  models/double-wishbone/kernel/source/*.yaml   the same four, beside the artefact they made
   models/ride-height/…
   models/double-wishbone-two-leg/…              every model the emitter supports, with a kernel
   models/quarter-car/                           neither: a dynamics study has no compiled solver
