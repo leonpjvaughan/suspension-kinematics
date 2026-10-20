@@ -33,6 +33,12 @@ AGREEMENT_FIGURES = 1
 #: between machines in its last bits, so its digits are not the model's. Reporting it as zero is
 #: both honest and the only way the artefact can be byte-identical.
 RESIDUAL_FLOOR = 1e-9
+#: Significant figures for the residual trace of an equilibrium solve. Every frame of a sweep is
+#: seeded from its predecessor, whose last bits a different LAPACK moves, and a stiff model
+#: amplifies that into a few per cent of the *first* iterate's residual — which is a digit at three
+#: figures and none at one. A kinematic solve is a root-find from the design pose with no such
+#: history, so it keeps three.
+EQUILIBRIUM_RESIDUAL_FIGURES = 1
 #: Decimal places per quantity: angles to four, lengths to six. One table, because a frame entry
 #: and a trajectory sample are the same numbers and must round the same way.
 QUANTITY_PLACES = {
@@ -178,6 +184,7 @@ def _iterations(sweep: Sweep, index: int) -> list[dict]:
 
     frame = sweep.frames[index]
     rows = [i for i, row in enumerate(sweep.problem.rows) if row.group in (HARD, NORM, DRIVER)]
+    figures = EQUILIBRIUM_RESIDUAL_FIGURES if sweep.problem.has_springs else RESIDUAL_FIGURES
     history = frame.history
     if len(history) > MAX_ITERATIONS:
         stride = (len(history) - 1) / (MAX_ITERATIONS - 1)
@@ -192,7 +199,7 @@ def _iterations(sweep: Sweep, index: int) -> list[dict]:
         out.append(
             {
                 "k": k,
-                "residual": [_sig(v, RESIDUAL_FIGURES, floor=RESIDUAL_FLOOR) for v in residual],
+                "residual": [_sig(v, figures, floor=RESIDUAL_FLOOR) for v in residual],
                 "singular_values": [_sig(v, SINGULAR_FIGURES) for v in values],
             }
         )
