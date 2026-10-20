@@ -266,11 +266,11 @@ otkd-0.1.0/
 The manifest says *why* a kernel is missing rather than leaving a hole, so a consumer sees the
 current limit instead of a broken path.
 
-**One free direction, for now.** The kernel's equilibrium path was written for the tie-rod corner:
-one compliance, one free direction, one linear solve. A model with a bush at the ball joint has
-three, and the emitter refuses it by name — "an equilibrium kernel expects one free direction; this
-model has 3" — rather than emitting a solver for the wrong equations.
-[`follow-ups.md`](follow-ups.md) has the item.
+**Compliance is the KKT system, not a projection.** The equilibrium kernel solves
+`[∇Π − Φᵀλ ; Φ] = 0` in `(q, λ)`, the same system the Python engine solves, so a joint with three
+compliant components compiles and agrees with Python to `1e-9`. The first version projected the
+potential onto a one-dimensional null space, which was right for the tie-rod corner and refused a
+bushed ball joint by name ([`decisions.md`](decisions.md) round 25).
 
 ### `maths-site`: a step before the build
 

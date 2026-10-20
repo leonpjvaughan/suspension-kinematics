@@ -17,6 +17,28 @@
 > free direction; this model has 3"), so an *interactive* ladder needs the kernel work in
 > [`follow-ups.md`](follow-ups.md); the export is static for now.
 >
+> **Two things a page should know before it regenerates §1.5's table.** The example's ladder is in
+> the export's conventions: camber is positive with the top of the wheel *outboard* (§1.2 is the
+> other way round), and the travel band is ±0.1 rad of the lower arm, which is **+1 to +86 mm** of
+> wheel travel because the loads push the corner into bump. Measured from the design travel, over
+> ±40 mm: **0.2 MN/m: rest 0.909°, change 1.873°; 1: 0.180°, 1.834°; 10: 0.018°, 1.825°; 100:
+> 0.002°, 1.824°**.
+>
+> The difference from the page's own ladder is not the convention — it is the *baseline*. The
+> page's rigid model gains about **1.00°** of camber under load, and the package's example gains
+> **0.002°**, because the example's only compliance is the bush: with a rigid bush, a rigid
+> mechanism does not deflect under load at all. A page that wants its ladder from the export has to
+> decide where the corner's other compliance lives — the tyre, a lower-arm bush, or nowhere — and
+> that is a modelling decision, not a data one.
+>
+> **And one contract change to know about.** A payload for a model with springs now reports a
+> single converged `iterations[]` entry instead of a descent. The path of a stiff equilibrium solve
+> is not reproducible between two machines — the frames were byte-identical while the first
+> iterate's residual differed by a factor of two — and a committed artefact has to be reproducible.
+> The entry carries the residual (floored, because below the solver's tolerance it is the
+> arithmetic's number) and the singular values of the solution's own Jacobian, which is the part
+> worth reading. Kinematic payloads keep their full descent.
+>
 > **That measurement has
 > now been made, and it is a yes**: the equilibrium was the wall — a joint compliant in three
 > components would not converge in the projected formulation — and solving the saddle point

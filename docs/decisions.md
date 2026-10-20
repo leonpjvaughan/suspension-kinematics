@@ -723,3 +723,30 @@ The follow-up's last piece: one run has to produce the ladder, not four exports.
 6. **The CI example lists are derived, not typed.** A new example used to be half-wired until
    someone noticed; `scripts/examples.py` prints them, and `--with-payload` prints the ones `emit`
    accepts. A new example is now wired by existing.
+
+---
+
+## Round 25: the kernel solves the KKT system, and two things a run carries that an artefact cannot (accepted)
+
+1. **The compiled equilibrium path is the same KKT system as Python.** The first kernel version
+   projected the potential onto a one-dimensional null space found by a single linear solve: right
+   for the tie-rod corner, and refused by name for a bush at a ball joint, because three compliant
+   components make the free space three-dimensional. The generated Rust now assembles
+   `[∇Π − Φᵀλ ; Φ]` in `(q, λ)` with `K = N + rows` unknowns and solves it by finite-difference
+   Newton, with `solve_linear` taking its dimension instead of assuming `N`. The three-component
+   model reproduces Python's poses, points and metrics to `1e-9`; the iteration threshold is `1e-13`
+   because the difference quotient approaches the root from one side and stops wherever the
+   threshold is.
+2. **A model without a rigid front view no longer breaks the kernel.** The metrics block was omitted
+   when there is no front-view construction, but the JS glue always calls `metrics()`. A bushed ball
+   joint is not a rigid one, so its instant centre is undefined rather than wrong; the block is now
+   always emitted, with `NaN` in the `ic` and `rc` slots and the glue's JSON turning that into
+   `null`, which is what the Python outputs report for the same model.
+3. **A compliant frame reports its deflection.** `springs` maps each compliant row to how far it
+   moved — the number an engineer reads and a §1.5 table needs ("a 6.8 mm bush at 0.2 MN/m"). It is
+   not a wheel metric, so it travels beside them, and only for a model that has one.
+4. **`solve --json` carries the descent that the payload cannot.** The committed trace is one
+   converged iterate because the path of a stiff equilibrium solve is not reproducible between two
+   machines; a *run* is not an artefact, so `--json` also writes `trace` for the representative
+   frame, unrounded, for a figure that wants to plot how the solve got there. The two are separate
+   keys so a page can say which it drew.

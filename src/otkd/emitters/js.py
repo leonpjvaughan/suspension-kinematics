@@ -29,6 +29,9 @@ ANGLE_DP = 4
 RESIDUAL_FIGURES = 3
 SINGULAR_FIGURES = 4
 AGREEMENT_FIGURES = 1
+#: A compliant row's deflection: 0.0068 m for a bush, 1e-8 m for a very stiff one, so significant
+#: figures rather than decimal places.
+SPRING_FIGURES = 6
 #: A study axis sweeps a geometry number, and a compliance is 1e-8 while a length is 0.37:
 #: decimal places cannot hold both, so an axis value is reported to significant figures.
 AXIS_FIGURES = 6
@@ -107,6 +110,15 @@ def payload(sweep: Sweep) -> dict:
         }
         if sweep.axis_numbers:
             entry["axis"] = [_sig(value, AXIS_FIGURES) for value in frame.axis]
+        if sweep.problem.has_springs:
+            # A compliant row has a *value* an engineer reads: how far the bush moved. It is not a
+            # metric (it belongs to the joint, not to the wheel), so it travels beside them, and
+            # only for a model that has one.
+            values = sweep.problem.evaluate(frame.q, sweep.problem.numbers(), sweep.problem.theta0())
+            entry["springs"] = {
+                sweep.problem.rows[i].name: _sig(float(values[i]), SPRING_FIGURES)
+                for i in sweep.problem.spring
+            }
         entry.update(_rounded(quantities(out)))
         entry["branchChanged"] = bool(frame.branch_changed)
         frames.append(entry)

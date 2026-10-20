@@ -31,18 +31,6 @@ it.
 | An end-to-end CLI test | the library is covered; `check`, `solve` and `emit` are exercised by hand and by CI shell steps, not by a test |
 | A sanity check on the toe curve | the steering arm was lengthened until bump steer was believable (±0.6°); it wants an engineer's eye, not a test |
 
-## The compiled kernel's equilibrium path is one degree of freedom
-
-`emit --format wasm` refuses a ball joint compliant in three translations with "an equilibrium
-kernel expects one free direction; this model has 3" — a loud, specific refusal, and the release
-manifest records it by name. The Python ladder is unaffected. An *interactive* version of §1.5
-needs the Rust equilibrium solver generalised from the tie-rod corner (one compliance, one free
-direction) to `n` free directions, which is the same shape as the Python solve: the KKT system in
-`(q, λ)`, which is square and needs no basis.
-
-Done means: the kernel solves `examples/double-wishbone-ubj` at every stiffness in its table and
-agrees with Python on the metrics to `1e-9`, the way the tie-rod corner does.
-
 ## The dynamics acceleration rebuilds the mass matrix 2n+2 times
 
 `velocity_products` takes a finite-difference gradient of `½ q̇ᵀM q̇` over `q`, so one acceleration
@@ -55,6 +43,8 @@ mass matrix already builds, and the quarter-car energy test still passes with th
 
 ## Done
 
+- **The kernel's equilibrium path** is the KKT system, so a bush at a ball joint compiles and agrees
+  with Python to `1e-9` ([`decisions.md`](decisions.md) round 25).
 - **A compliant upper joint and a stiffness axis**: `examples/double-wishbone-ubj` sweeps the bush
   at the upper ball joint over 0.2, 1, 10 and 100 MN/m in one run, and camber responds to it
   monotonically (2.0828° of travel at 0.2 MN/m, 2.0280° at 100 MN/m, converging to the rigid

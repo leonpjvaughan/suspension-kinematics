@@ -61,8 +61,10 @@ def _reference(model):
                     "toe": metrics.toe,
                     "track": metrics.track,
                     "contact": list(metrics.contact),
-                    "ic": list(metrics.ic),
-                    "rc": list(metrics.rc),
+                    # `None` where the model has no front-view construction: a bushed ball joint
+                    # is not a rigid one, so the instant centre is undefined rather than wrong.
+                    "ic": list(metrics.ic) if metrics.ic is not None else None,
+                    "rc": list(metrics.rc) if metrics.rc is not None else None,
                 },
             }
         )
@@ -148,6 +150,16 @@ def compliant_kernel(tmp_path_factory):
     return _emit_and_run(tmp_path_factory, "double-wishbone-compliant")
 
 
+@pytest.fixture(scope="module")
+def ubj_kernel(tmp_path_factory):
+    """A bush at the upper ball joint: three compliant components, three free directions.
+
+    The kernel refused this model while its equilibrium path assumed one free direction, so it is
+    the conformance test for the KKT version rather than an extra.
+    """
+    return _emit_and_run(tmp_path_factory, "double-wishbone-ubj")
+
+
 def test_the_emitter_writes_a_buildable_kernel(kernel):
     out, result, _ = kernel
     for name in ("kernel.rs", "kernel.wasm", "kernel.js", "kernel.json"):
@@ -169,8 +181,9 @@ def test_the_kernel_reproduces_the_python_jacobian(kernel):
     assert np.max(np.abs(np.array(result["jac"]) - expected)) < 1e-12
 
 
-def test_the_kernel_reproduces_python_poses(kernel):
-    _, result, reference = kernel
+@pytest.mark.parametrize("which", ["kernel", "redundant_kernel", "compliant_kernel", "ubj_kernel"])
+def test_the_kernel_reproduces_python_poses(which, request):
+    _, result, reference = request.getfixturevalue(which)
     assert len(result["frames"]) == len(reference["frames"])
     for mine, theirs in zip(result["frames"], reference["frames"]):
         assert mine["residual"] < 1e-12
@@ -179,13 +192,18 @@ def test_the_kernel_reproduces_python_poses(kernel):
             assert np.allclose(mine["points"][name], expected, atol=1e-9), name
 
 
-def test_the_kernel_reproduces_the_python_metrics(kernel):
-    _, result, reference = kernel
+@pytest.mark.parametrize("which", ["kernel", "redundant_kernel", "compliant_kernel", "ubj_kernel"])
+def test_the_kernel_reproduces_the_python_metrics(which, request):
+    _, result, reference = request.getfixturevalue(which)
     for mine, theirs in zip(result["frames"], reference["frames"]):
         for name in ("camber", "toe", "track"):
             assert abs(mine["metrics"][name] - theirs["metrics"][name]) < 1e-9, (name, theirs["theta"])
         for name in ("contact", "ic", "rc"):
-            assert np.allclose(mine["metrics"][name], theirs["metrics"][name], atol=1e-9), (name, theirs["theta"])
+            ours, yours = mine["metrics"][name], theirs["metrics"][name]
+            if ours is None or yours is None:
+                assert ours is None and yours is None, (name, theirs["theta"])
+            else:
+                assert np.allclose(ours, yours, atol=1e-9), (name, theirs["theta"])
 
 
 def test_the_kernel_is_fast_enough_to_interact_with(kernel):
