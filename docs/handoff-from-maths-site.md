@@ -7,7 +7,11 @@
 > (`bundle: otkd-bundle-2`). Request 1 is accepted as
 > [`follow-ups.md`](follow-ups.md)'s "A compliant upper joint, and a stiffness axis", in the
 > package's shape: a number iterated outside the travel driver, each inner sweep seeded from the
-> design pose, and the ladder gated on a measurement that camber responds. Request 3 is dropped for
+> design pose, and the ladder gated on a measurement that camber responds. **That measurement has
+> now been made, and it is a no so far**: a ball joint compliant in three components classifies
+> cleanly and then does not converge at any stiffness, with four explanations ruled out by
+> measurement and the projected-potential basis left as the live one. The route is the saddle-point
+> KKT system; [`follow-ups.md`](follow-ups.md) has the table. Request 3 is dropped for
 > want of an owner in the book's queue; it can return with an item. The acceptance is the package's
 > numbers, not the page's rounding — where they disagree, the page changes.
 

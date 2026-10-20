@@ -103,12 +103,11 @@ class Problem:
         self.driver = [i for i, row in enumerate(self.rows) if row.group == DRIVER]
         self.spring = [i for i, row in enumerate(self.rows) if row.group == SPRING]
 
-        self._pi_spring = sp.Integer(0)
-        for i in self.spring:
-            name, component = self.rows[i].name.split(".", 1)
-            c = self._find(("compliance", name, component))
-            self._pi_spring += self._exprs[i] ** 2 / (2 * c)
-        self._pi_spring = sp.expand(self._pi_spring)
+        # `Π = ½ Σ gᵢ²/cᵢ`, so `∇Π = Σ (gᵢ/cᵢ) ∇gᵢ`. That is assembled from the row Jacobian at
+        # call time (see `gradient`) rather than differentiated symbolically: a symbolic gradient
+        # is a new expression for every compliant component, and three of them at one frame joint
+        # take minutes to compile and then do not evaluate at all. The rows are the same
+        # expressions the residual already uses, so the number is the same one.
 
         self._f_rows = self._lambdify(self._exprs)
         self._f_jac = self._lambdify(self._cache_jacobian())
@@ -303,29 +302,25 @@ class Problem:
     def has_springs(self) -> bool:
         return bool(self.spring)
 
-    @cached_property
-    def _f_grad(self) -> Callable | None:
-        if not self.has_springs:
-            return None
-        return self._lambdify([self._pi_spring.diff(sym) for sym in self.q])
-
-    @cached_property
-    def _f_hess(self) -> Callable | None:
-        if not self.has_springs:
-            return None
-        return self._lambdify(
-            sp.Matrix(self.n, self.n, lambda a, b: self._pi_spring.diff(self.q[a], self.q[b]))
-        )
-
     def gradient(self, q, g, theta) -> np.ndarray:
-        if self._f_grad is None:
-            return np.zeros(self.n)
-        return np.asarray(self._f_grad(*q, *g, *theta), dtype=float).reshape(-1)
+        """The gradient of the spring potential, assembled row by row.
 
-    def hessian(self, q, g, theta) -> np.ndarray:
-        if self._f_hess is None:
-            return np.zeros((self.n, self.n))
-        return np.asarray(self._f_hess(*q, *g, *theta), dtype=float).reshape(self.n, self.n)
+        `Π = ½ Σ gᵢ²/cᵢ` is a sum over the compliant rows, so its gradient is
+        `Σ (gᵢ/cᵢ) ∇gᵢ` — the row Jacobian times a per-row weight, which is what this computes.
+        Differentiating the sum symbolically instead produces one enormous expression: it was
+        fine for a single compliant component (the tie rod) and unusable for three at one frame
+        joint, where the model took 63 s to compile and the gradient never returned.
+        """
+        if not self.has_springs:
+            return np.zeros(self.n)
+        values = self.evaluate(q, g, theta)
+        rows = self.jacobian(q, g, theta)
+        compliance = self.compliance(g)
+        out = np.zeros(self.n)
+        for i in self.spring:
+            name, component = self.rows[i].name.split(".", 1)
+            out += (values[i] / compliance[(name, component)]) * rows[i]
+        return out
 
     def point_derivatives(self, body: str, point: str) -> tuple[Callable, Callable]:
         key = (body, point)
