@@ -17,6 +17,14 @@
 > free direction; this model has 3"), so an *interactive* ladder needs the kernel work in
 > [`follow-ups.md`](follow-ups.md); the export is static for now.
 >
+> **And one contract change to know about.** A payload for a model with springs now reports a
+> single converged `iterations[]` entry instead of a descent. The path of a stiff equilibrium solve
+> is not reproducible between two machines — the frames were byte-identical while the first
+> iterate's residual differed by a factor of two — and a committed artefact has to be reproducible.
+> The entry carries the residual (floored, because below the solver's tolerance it is the
+> arithmetic's number) and the singular values of the solution's own Jacobian, which is the part
+> worth reading. Kinematic payloads keep their full descent.
+>
 > **That measurement has
 > now been made, and it is a yes**: the equilibrium was the wall — a joint compliant in three
 > components would not converge in the projected formulation — and solving the saddle point
