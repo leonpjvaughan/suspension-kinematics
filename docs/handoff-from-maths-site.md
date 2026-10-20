@@ -1,5 +1,16 @@
 # Handoff from `maths-site`: what the book cannot say yet
 
+> **Answered here.** Request 2 is met in **0.5.0**: `solve --json` writes, per step, the fields a
+> sweep frame carries (`camber`, `toe`, `ic`, `rc`, `track`, `contact`, the world points) beside
+> `t`, `energy` and `constraint`; and every model in the bundle now carries `source/` and a
+> `sources` digest map — dynamics included, which is the half that was a correctness question
+> (`bundle: otkd-bundle-2`). Request 1 is accepted as
+> [`follow-ups.md`](follow-ups.md)'s "A compliant upper joint, and a stiffness axis", in the
+> package's shape: a number iterated outside the travel driver, each inner sweep seeded from the
+> design pose, and the ladder gated on a measurement that camber responds. Request 3 is dropped for
+> want of an owner in the book's queue; it can return with an item. The acceptance is the package's
+> numbers, not the page's rounding — where they disagree, the page changes.
+
 **From:** `open-textbook.org` (`maths-site`), which vendors your bundle
 **At:** `otkd` 0.4.0 (commit `f5d2c92`), 2026-10-19
 **Status:** requests, with the measurements that justify each. Nothing here is a bug report

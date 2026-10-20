@@ -16,6 +16,26 @@ v2.0 (accelerations and reactions) and v2.1 (time stepping with projection, the 
 a `dynamics` study shape with a CLI path) are implemented and tested. Remaining, per
 [`dynamics.md`](dynamics.md) §7: v2.2 — four corners, a chassis body and a contact-patch load.
 
+## A compliant upper joint, and a stiffness axis
+
+Requested by `maths-site` ([`handoff-from-maths-site.md`](handoff-from-maths-site.md) §1) and
+accepted in the package's shape, not the book's. Two halves.
+
+- **A compliant spherical joint** — most likely `uca-up` with its three translation components
+  springy — so a load path can run through the upper ball joint. `geometry.yaml` already has the
+  shape (`joints.<name>.compliance`); what is missing is a kind whose modes allow it, and an
+  example that uses it.
+- **A stiffness axis on the study**: a number iterated *outside* the travel driver, so one run
+  produces the ladder. `Sweep.frames` carries one `primary` axis today and `solvers/sweep.py` seeds
+  each frame from its predecessor; a second axis must seed each inner sweep from the design pose,
+  because a soft joint and a stiff joint are different branches.
+
+Done means: an example sweeps stiffness and its export reports camber at rest and over the travel
+for each value; the classifier and the kernel accept it, or refuse it for a reason about the
+mathematics rather than the plumbing; and a **measurement** shows camber responds to that
+compliance. If it does not, the answer is no — an approximation built from a compliant *distance*
+joint would give a ladder of the right shape and the wrong physics, which is worse than no ladder.
+
 ## The UI
 
 Deferred, and possibly never built. [`ui.md`](ui.md) is the design if it is revived; the
@@ -29,11 +49,16 @@ it.
 |---|---|
 | Display names in `otkd compile --format latex` | the symbols are `g_{lcaf 0}`; the command exists to typeset the book's equations, so the names should read as grammar does |
 | An end-to-end CLI test | the library is covered; `check`, `solve` and `emit` are exercised by hand and by CI shell steps, not by a test |
-| Reconcile the book's geometry with the examples' | `maths-site`'s `mechanism.js` uses different numbers (upper-arm height 0.454, tyre radius 0.32); the chapter should teach one set |
 | A sanity check on the toe curve | the steering arm was lengthened until bump steer was believable (±0.6°); it wants an engineer's eye, not a test |
 
 ## Done
 
+- **The book's geometry** is reconciled on its side at 0.4.0: `maths-site` adopted
+  `tyre-radius = 0.200` and the ground plane it implies, and its roll centre agrees with the export
+  to 1 mm. Their words: the entry can be closed from where they sit.
+- **A trajectory the book can draw** and **a bundle that witnesses a dynamics model**: `0.5.0`
+  writes frame-shaped samples from `solve --json`, and gives every model `source/` plus a digest map
+  in the manifest (`otkd-bundle-2`). [`decisions.md`](decisions.md) round 21.
 - **Kernel equilibrium**: a compliant model now gets Newton on the equilibrium residual with the
   load case baked in, and agrees with Python's solver to `1e-12` on the pose. The free direction
   is found by one linear solve rather than an SVD, which is why this arrived without a singular

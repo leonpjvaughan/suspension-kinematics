@@ -567,3 +567,43 @@ mattering, and the `commits` job keeps the individual commits conventional.
    on), and renewing the interaction limit when it lapses in 2027-04. Issues and discussions stay
    disabled, so a lapsed limit reopens comments on pull requests and nothing else. Both are recorded
    as declined in [`security.md`](security.md) rather than left as open tasks.
+
+---
+
+## Round 21: the book's two requests, accepted in the package's shape (accepted)
+
+`maths-site` asked for two capabilities in [`handoff-from-maths-site.md`](handoff-from-maths-site.md).
+Both are accepted, the shape is changed in three places, and one request is dropped.
+
+1. **A trajectory sample carries the same quantities as a sweep frame.**
+   `analysis.outputs.quantities` names them; `emitters.js.sample` rounds them; `otkd solve --json`
+   writes, per step, `camber`, `toe`, `ic`, `rc`, `track`, `contact` and every world point, beside
+   `t`, `energy` and `constraint`. `theta` and `branchChanged` are sweep concepts and are absent,
+   which is the only difference. The book's own extractor can then go: a second reader of the model
+   was the thing to avoid, not to duplicate.
+2. **The payload's key order is the quantity table's.** `contact` moved before `branchChanged`, so
+   the four committed `out.js` files were regenerated. Every frame was compared field by field with
+   its predecessor before committing: the values are identical and only the order is canonical. The
+   reorder is not new data and is not announced as though it were.
+3. **Every model in the bundle carries its config files and their digests.** The kernel already
+   wrote `kernel/source/` and recorded digests in `provenance.json`. The bundle now writes
+   `models/<id>/source/` and `manifest.models.<id>.sources` for *every* model, which is the only
+   provenance a dynamics model has: it ships no payload and no kernel, so a consumer that vendored
+   a trajectory separately had nothing to compare it against. The library is included because it
+   lives outside the model directory — a release that changed what `spring` means would otherwise
+   change the model with no digest moving. The format is now `otkd-bundle-2`: a promise to witness
+   provenance should be visible in the promise's own version.
+4. **A compliant upper joint and a stiffness axis are accepted as a follow-up**, in the package's
+   shape rather than the book's: the axis is a number iterated *outside* the travel driver, each
+   inner sweep seeded from the design pose because a soft joint and a stiff joint are different
+   branches, and the book's ladder is gated on a measurement that camber responds. Their evidence
+   is that the tie rod moves toe by 1.5° and camber by 0.04°, so "soften the ball joint instead" is
+   a hypothesis until a run shows it.
+5. **Dropped: the SVD diagnosis in `out.js`.** It has no item in the book's queue, so nobody is
+   waiting for it. `otkd check` prints the diagnosis, and the chapter computes it as the exercise
+   it is; a payload field with no reader is a wish, and a request with no owner should not sit in a
+   handoff. It can return with an item.
+6. **Governance.** The book's acceptance was "agrees to the rounding shown", which makes the
+   package answerable to a figure. It is the other way round: the package's own numbers are the
+   source, and where the page disagrees the page changes. A package tuned to a textbook cannot then
+   be evidence for it.
