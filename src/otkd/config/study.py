@@ -51,6 +51,22 @@ class Law(BaseModel):
         return np.asarray(self.values, dtype=float)
 
 
+class Axis(BaseModel):
+    """A geometry number the study sweeps, outside the drivers.
+
+    One law applied to every number named, because one bush is one stiffness: a joint whose three
+    translation components deflect together is one axis, not three. Each value starts a fresh pass
+    over the drivers, seeded from the design pose — a soft joint and a stiff joint are different
+    assemblies, and branch continuity is a property of a pass, not of the study.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Dotted geometry names: `compliance.uca-up.tx`, `length.tie-rod`, `point.lcaf.2`.
+    numbers: list[str]
+    law: Law = Law()
+
+
 class Driver(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -75,6 +91,8 @@ class Study(BaseModel):
     version: int = 1
     analysis: Literal["kinematics", "dynamics"] = "kinematics"
     drivers: list[Driver] = []
+    #: Geometry numbers swept outside the drivers: one pass over the drivers per value.
+    axes: list[Axis] = []
     loads: list[Load] = []
     #: A dynamics study's time span and output count. Required for `analysis: dynamics`.
     duration: float | None = None

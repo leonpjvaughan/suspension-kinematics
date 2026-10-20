@@ -34,8 +34,9 @@ jobs:
 
       - name: Emitted data is committed and stable
         run: |
-          # Kinematic examples only: a dynamics study has no payload to emit, by design.
-          for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height; do
+          # Every example whose study is a sweep: a dynamics study has no payload to emit, by
+          # design. The list is derived rather than typed, so a new example cannot be half-wired.
+          for model in $(uv run python scripts/examples.py --with-payload); do
             uv run otkd emit "examples/$model" "examples/$model/out.js"
           done
           git add -A
@@ -43,7 +44,7 @@ jobs:
 
       - name: Examples validate
         run: |
-          for model in double-wishbone double-wishbone-two-leg double-wishbone-compliant ride-height quarter-car; do
+          for model in $(uv run python scripts/examples.py); do
             uv run otkd check "examples/$model" --quiet
           done
 

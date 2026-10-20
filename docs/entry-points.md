@@ -86,6 +86,11 @@ theta      camber     toe      track    ic          rc
 …
 ```
 
+A study that sweeps **geometry numbers** rather than only actuators carries `axes` in the payload:
+each axis names the numbers it moved and the values it took, and every frame carries its own value
+for each axis, so a ladder is one file rather than one file per stiffness
+([`config-layer.md`](config-layer.md) §8).
+
 `solve --json` emits the same object `emit --format js` serialises into an ES module. One
 producer, two wrappers: a terminal and a figure cannot disagree about a number. A `dynamics`
 study's `--json` writes a trajectory whose every step is *shaped like a sweep frame* — the same

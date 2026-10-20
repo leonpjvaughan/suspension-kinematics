@@ -13,6 +13,7 @@ rotation matrix, so a future change of parametrisation stays local to this file.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Callable
@@ -271,6 +272,31 @@ class Problem:
                 raise KeyError(key)
         return values
 
+    @property
+    def number_names(self) -> list[str]:
+        """Every geometry number, dotted, in the order `numbers()` returns them.
+
+        A number that stands alone drops the index it was allocated with — `compliance.tie-rod.length`
+        rather than `…length.0` — because that index is the compiler's bookkeeping, not the model's.
+        The three components of a point keep theirs: `point.lcaf.0` … `.2`.
+        """
+        counts = Counter(key[:-1] for key in self._gkey)
+        return [
+            ".".join(str(part) for part in (key[:-1] if counts[key[:-1]] == 1 else key))
+            for key in self._gkey
+        ]
+
+    def number_index(self, name: str) -> int:
+        """The index of a geometry number in `numbers()`, named as `compliance.uca-up.tx`.
+
+        Matched against `number_names` rather than by prefix: a study that names a number has to be
+        told when the number is not there, not handed the first one that starts the same way.
+        """
+        try:
+            return self.number_names.index(name)
+        except ValueError:
+            raise KeyError(name) from None
+
     def compliance(self, g: np.ndarray) -> dict[tuple[str, str], float]:
         out = {}
         for i, key in enumerate(self._gkey):
@@ -302,7 +328,7 @@ class Problem:
     def has_springs(self) -> bool:
         return bool(self.spring)
 
-    def gradient(self, q, g, theta) -> np.ndarray:
+    def gradient(self, q, g, theta, rows=None) -> np.ndarray:
         """The gradient of the spring potential, assembled row by row.
 
         `Π = ½ Σ gᵢ²/cᵢ` is a sum over the compliant rows, so its gradient is
@@ -310,16 +336,20 @@ class Problem:
         Differentiating the sum symbolically instead produces one enormous expression: it was
         fine for a single compliant component (the tie rod) and unusable for three at one frame
         joint, where the model took 63 s to compile and the gradient never returned.
+
+        `rows` restricts the sum to the rows that actually deflect; a component whose compliance
+        is zero is a rigid constraint, not a spring, and `1/0` is not a force.
         """
-        if not self.has_springs:
+        indices = self.spring if rows is None else list(rows)
+        if not indices:
             return np.zeros(self.n)
         values = self.evaluate(q, g, theta)
-        rows = self.jacobian(q, g, theta)
+        jacobian = self.jacobian(q, g, theta)
         compliance = self.compliance(g)
         out = np.zeros(self.n)
-        for i in self.spring:
+        for i in indices:
             name, component = self.rows[i].name.split(".", 1)
-            out += (values[i] / compliance[(name, component)]) * rows[i]
+            out += (values[i] / compliance[(name, component)]) * jacobian[i]
         return out
 
     def point_derivatives(self, body: str, point: str) -> tuple[Callable, Callable]:
