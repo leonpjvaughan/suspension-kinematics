@@ -24,12 +24,17 @@
 > ±40 mm: **0.2 MN/m: rest 0.909°, change 1.873°; 1: 0.180°, 1.834°; 10: 0.018°, 1.825°; 100:
 > 0.002°, 1.824°**.
 >
-> The difference from the page's own ladder is not the convention — it is the *baseline*. The
-> page's rigid model gains about **1.00°** of camber under load, and the package's example gains
-> **0.002°**, because the example's only compliance is the bush: with a rigid bush, a rigid
-> mechanism does not deflect under load at all. A page that wants its ladder from the export has to
-> decide where the corner's other compliance lives — the tyre, a lower-arm bush, or nowhere — and
-> that is a modelling decision, not a data one.
+> **The two ladders are further apart than a datum, and the difference is not the one this note
+> first gave.** The page's camber carries a static −1.0° at the design position (`CAMBER0` in
+> `mechanism.js`), which is a convention and accounts for exactly one degree of the gap. The rest
+> is a *model*: given the page's own load case — one lateral 3 kN at the contact patch — the
+> package's bush deflects **2.508 mm** at 0.2 MN/m where the page's model says **6.8 mm**, and the
+> camber shift at rest is **0.308°** where the page's is **1.05°**.
+>
+> Softening the tie rod was the first suspect and it is **ruled out**: at 1e-5 m/N the bush's
+> deflection moves from 2.508 to 2.561 mm, two per cent, and the camber shift falls. Whatever the
+> page's model has that the package's has not is on the page's side — the patch's position, or how
+> `F x_P` distributes the force — and it is the book's to identify, because it is the book's model.
 >
 > **And one contract change to know about.** A payload for a model with springs now reports a
 > single converged `iterations[]` entry instead of a descent. The path of a stiff equilibrium solve
