@@ -11,6 +11,32 @@ from otkd.emitters.js import payload, render
 from tests.helpers import EXAMPLES
 
 
+def test_a_trajectory_step_has_a_frame_entry_shape(wishbone):
+    """One reading of the model: a sweep frame and a trajectory step are the same shape.
+
+    The book vendors a dynamics trajectory separately from the bundle, so it draws one with its
+    own code. If the two shapes drift, that second reader becomes a second implementation — which
+    is what this asserts against.
+    """
+    from otkd.emitters.js import sample
+
+    result = otkd.solve(wishbone)
+    middle = len(result.frames) // 2
+    frame = payload(result)["sweep"]["frames"][middle]
+    step = sample(
+        result.problem,
+        result.frames[middle].q,
+        result.reference,
+        time=0.0,
+        energy=0.0,
+        constraint=0.0,
+    )
+    assert set(step) - {"t", "energy", "constraint"} == set(frame) - {"theta", "branchChanged"}
+    for name in ("camber", "toe", "track", "ic", "rc", "contact"):
+        assert step[name] == frame[name], name
+    assert step["points"] == frame["points"]
+
+
 def test_the_committed_module_is_reproducible(tmp_path):
     target = tmp_path / "out.js"
     otkd.emit(otkd.load(EXAMPLES / "double-wishbone"), target)

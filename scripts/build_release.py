@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import otkd  # noqa: E402
 from otkd.emitters.js import payload, render  # noqa: E402
-from otkd.emitters.wasm import emit_wasm  # noqa: E402
+from otkd.emitters.wasm import copy_sources, emit_wasm  # noqa: E402
 from otkd.solvers.sweep import sweep  # noqa: E402
 
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
@@ -54,12 +54,15 @@ def build_model(example: Path, out_root: Path) -> dict:
     model = otkd.load(example)
     target = out_root / "models" / example.name
     target.mkdir(parents=True, exist_ok=True)
+    # Every model carries its four config files and their digests, whether or not it has a
+    # kernel: for a dynamics model they are the only provenance in the bundle.
+    status = {"id": model.topology.id, "sources": copy_sources(target, model)}
 
     if model.study is not None and model.study.analysis == "dynamics":
-        status = {"id": model.topology.id, "payload": "none (dynamics)", "kernel": "none (dynamics)"}
+        status.update({"payload": "none (dynamics)", "kernel": "none (dynamics)"})
         return status
     (target / "out.js").write_text(render(payload(sweep(model))))
-    status = {"id": model.topology.id, "payload": "out.js"}
+    status["payload"] = "out.js"
     try:
         written = emit_wasm(model, target / "kernel")
         status["kernel"] = "kernel.wasm" if written["wasm"] else f"source only ({written['note']})"
@@ -109,7 +112,7 @@ def write_manifest(dist: Path, version: str, models: dict) -> None:
         "git": git_sha(),
         "python": platform.python_version(),
         "rustc": tool_version(["rustc", "--version"]),
-        "bundle": "otkd-bundle-1",
+        "bundle": "otkd-bundle-2",
         "models": models,
     }
     (dist / "MANIFEST.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")

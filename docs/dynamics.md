@@ -126,12 +126,14 @@ M(q) q̈  +  C(q, q̇)  =  f(q, q̇)  −  Φ_q(q)ᵀ λ
   the total energy varied along the motion by an amount that did not shrink with the step size.
   Every earlier dynamics test used a state at rest or a tangent velocity, where `C` vanishes.
 
-- **`M` is block diagonal, 6×6 per body**, because the coordinates are the bodies' own
-  poses rather than generalised joint coordinates. Per body, `M_b = diag(m I₃,
-  J_ω(φ)ᵀ I J_ω(φ))` with `J_ω` the right-Jacobian of the rotation vector. That is a small
-  symbolic expression, derived once, and it is the reason this formulation is affordable
-  in sympy at all. A joint-coordinate formulation would give a dense `M` and a much larger
-  expression for no benefit here.
+- **`M` is block diagonal per body**, because the coordinates are the bodies' own poses rather
+  than generalised joint coordinates. A body carries seven unknowns — a position and a unit
+  quaternion — so its block is 7×7: `M_b = m Jᵥᵀ Jᵥ + J_ωᵀ I J_ω`, the two Jacobians being the
+  derivatives of a world point and of the body's rotation with respect to those seven. A
+  rotation-vector formulation would need the exponential map's derivative, which is 0/0 at the
+  design position; the quaternion is why this stays a small symbolic expression
+  ([`decisions.md`](decisions.md)). A joint-coordinate formulation would give a dense `M` and a
+  much larger expression for no benefit here.
 - **`f`** is gravity, the applied loads projected through `∂x/∂q`, the spring forces
   `−g_i ∇g_i / c_i`, the damping `−d_i (ġ_i) ∇g_i`, and any `effort` actuator.
 - **`Φ_qᵀ λ`** is the joint reactions. `Φ_q` already exists; `λ` is new, and it is also
@@ -288,11 +290,20 @@ loads:
 constraint residual; `--json` writes the trajectory. `otkd emit` refuses a dynamics study: its
 payload is a trajectory, not a sweep, and the book's export contract is about sweeps.
 
-### v2.2 — the corner becomes a car
+### v2.2 — the corner becomes a car — **implemented**
 
-Damping in the config, a contact-patch load, and a four-corner topology with the chassis body.
-The config already supports it; the mobility check will demand three road drivers or a load
-case, which is the right conversation to have.
+`examples/quarter-car/` is the multi-body case: a chassis on a prismatic heave, the wishbone
+hanging off it, a coil-over as a `distance` joint with `modes: {length: spring}`, and the tyre on
+a road plane. Gravity alone drives it, and `tests/test_quarter_car.py` requires the energy error to
+fall with the step — which is what proves `C` is right, and what `check` had to learn: a dynamics
+model is *supposed* to have freedom, so the constraint set must be independent and springs are
+excluded from the rank, because in dynamics a spring is a force.
+
+**A four-corner model is measured, not shipped.** An example CI cannot afford to load is
+documentation rather than an example. Measured: 13 moving bodies, 91 unknowns, 81 rows — **167 s**
+to derive, **11 ms** per Jacobian. A 0.5 s trajectory is minutes, so it is usable for a figure and
+not for an interactive one; the compiled kernel is the answer for the latter, and the derivation,
+not the equations, is the wall.
 
 ### What the WASM kernel changes
 

@@ -169,6 +169,10 @@ def _solve_dynamics(model: Model, args) -> int:
         loads=loads,
     )
     if args.json_path:
+        from ..analysis.outputs import make_reference
+        from ..emitters.js import sample
+
+        reference = make_reference(problem)
         Path(args.json_path).write_text(
             json.dumps(
                 {
@@ -179,9 +183,13 @@ def _solve_dynamics(model: Model, args) -> int:
                         "steps": study.steps,
                         "generator": f"otkd {__version__}",
                     },
+                    # Every step carries the same quantities a sweep frame does, from the same
+                    # code, so a page needs one reading of the model and not two.
                     "trajectory": [
-                        {"t": _round(float(t), 6), "energy": _round(float(e), 6), "constraint": float(c)}
-                        for t, e, c in zip(trajectory.t, trajectory.energy, trajectory.constraint)
+                        sample(problem, q, reference, time=float(t), energy=float(e), constraint=float(c))
+                        for t, q, e, c in zip(
+                            trajectory.t, trajectory.q, trajectory.energy, trajectory.constraint
+                        )
                     ],
                 },
                 indent=2,
@@ -193,11 +201,6 @@ def _solve_dynamics(model: Model, args) -> int:
         for t, e, c in zip(trajectory.t[::stride], trajectory.energy[::stride], trajectory.constraint[::stride]):
             print(f"{t:8.4f} {e:12.4f} {c:10.2e}")
     return 0
-
-
-def _round(value: float, places: int) -> float:
-    rounded = round(value, places)
-    return 0.0 if rounded == 0 else rounded
 
 
 def _table(result) -> str:

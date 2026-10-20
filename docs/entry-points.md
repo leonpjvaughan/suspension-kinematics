@@ -87,7 +87,9 @@ theta      camber     toe      track    ic          rc
 ```
 
 `solve --json` emits the same object `emit --format js` serialises into an ES module. One
-producer, two wrappers: a terminal and a figure cannot disagree about a number.
+producer, two wrappers: a terminal and a figure cannot disagree about a number. A `dynamics`
+study's `--json` writes a trajectory whose every step is *shaped like a sweep frame* — the same
+quantity names, from the same function — so a page draws a trajectory and a sweep with one reader.
 
 **Exit codes:** `0` success, `1` a configuration error (the report is printed and nothing is
 written), `2` a solver failure (the frame, the last residual and the worst row by name). The
@@ -146,7 +148,7 @@ Dynamics has two entry points: a state-level function,
 `otkd.problem.dynamics.accelerations(problem, q, qdot, loads=..., gravity=...)`, returning the
 acceleration and the reaction in every constrained row; and a study with `analysis: dynamics`,
 `duration` and `steps`, which `otkd solve` integrates and prints, and `--json` writes as a
-trajectory. `emit` refuses a dynamics study, because the export contract is a sweep.
+trajectory: `t`, `energy`, `constraint` and, per step, the same fields a sweep frame carries. `emit` refuses a dynamics study, because the export contract is a sweep.
 [`dynamics.md`](dynamics.md) §7.
 
 The advanced surface (`Problem.rows`, `.jac`, `.diagnose`) is a function of `(q, geometry)`
