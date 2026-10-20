@@ -17,24 +17,27 @@
 > free direction; this model has 3"), so an *interactive* ladder needs the kernel work in
 > [`follow-ups.md`](follow-ups.md); the export is static for now.
 >
-> **Two things a page should know before it regenerates §1.5's table.** The example's ladder is in
-> the export's conventions: camber is positive with the top of the wheel *outboard* (§1.2 is the
-> other way round), and the travel band is ±0.1 rad of the lower arm, which is **+1 to +86 mm** of
-> wheel travel because the loads push the corner into bump. Measured from the design travel, over
-> ±40 mm: **0.2 MN/m: rest 0.909°, change 1.873°; 1: 0.180°, 1.834°; 10: 0.018°, 1.825°; 100:
-> 0.002°, 1.824°**.
+> **§1.5's ladder needs one decision before it can be regenerated, and this note first got the
+> reason wrong twice.** The example's own ladder, in the export's conventions (camber positive with
+> the top of the wheel outboard; travel from the loaded rest pose), over ±40 mm:
+> **0.2 MN/m: 6.14 mm of bush, rest −1.91°, change 1.96°; 1: 1.22 mm, −1.18°, 1.92°; 10: 0.12 mm,
+> −1.02°, 1.91°; 100: 0.012 mm, −1.00°, 1.91°** — the page's `CAMBER0 = −1.0°` is the datum, so
+> those are directly comparable with its `−2.05 …` column.
 >
-> **The two ladders are further apart than a datum, and the difference is not the one this note
-> first gave.** The page's camber carries a static −1.0° at the design position (`CAMBER0` in
-> `mechanism.js`), which is a convention and accounts for exactly one degree of the gap. The rest
-> is a *model*: given the page's own load case — one lateral 3 kN at the contact patch — the
-> package's bush deflects **2.508 mm** at 0.2 MN/m where the page's model says **6.8 mm**, and the
-> camber shift at rest is **0.308°** where the page's is **1.05°**.
+> Those numbers agree with the page's table to about ten per cent, and **that agreement is a
+> coincidence of load cases**. On the same load — the page's 3 kN lateral at the contact patch — the
+> two models differ by a factor of **2.7**: the export's bush moves 2.51 mm at 0.2 MN/m where the
+> page's moves 6.8 mm. The reason is structural and worth teaching: the page's model is a
+> front-view idealisation with no fore-aft structure, while the three-dimensional mechanism shares
+> the load through its tie rod and its spherical lower joint. Softening the tie rod does *not*
+> reproduce the front view — a rigid constraint removes a direction rather than adding a spring.
 >
-> Softening the tie rod was the first suspect and it is **ruled out**: at 1e-5 m/N the bush's
-> deflection moves from 2.508 to 2.561 mm, two per cent, and the camber shift falls. Whatever the
-> page's model has that the package's has not is on the page's side — the patch's position, or how
-> `F x_P` distributes the force — and it is the book's to identify, because it is the book's model.
+> So a table generated from the export would change the *experiment*, not just the numbers. The
+> recommendation for the page: drive its figure from the vendored
+> `double-wishbone-ubj/kernel/kernel.js` — the kernel takes the bush's compliance as a run-time
+> number slot, which is the pattern the rigid `kernel-camber.js` already uses — so the figure, the
+> table and the engine are one model and one load case, and the front view becomes the idealisation
+> whose cost (2.7×) the section can measure.
 >
 > **And one contract change to know about.** A payload for a model with springs now reports a
 > single converged `iterations[]` entry instead of a descent. The path of a stiff equilibrium solve
