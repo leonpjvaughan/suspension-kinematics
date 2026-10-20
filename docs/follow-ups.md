@@ -4,17 +4,27 @@ Work that has been agreed and deliberately not done yet. Each entry says what it
 deferred, and what would make it done — so picking one up does not require reconstructing the
 argument.
 
-## Compiled kernels, stage 2
+## Compiled kernels: a dynamics model
 
-The kernel currently compiles the square Newton path. The emitter *refuses* a redundant or
-compliant model with a message rather than emitting a solver for the wrong equations, so the
-gap is loud. Three increments close it, in this order.
+Every kinematic example now compiles, including the compliant and the bushed ones — square Newton,
+least squares, and the KKT equilibrium ([`decisions.md`](decisions.md) round 25). What has no
+kernel is a **dynamics** study: `emit --format wasm` refuses it by name, and the release manifest
+records `none (dynamics)` for the quarter car. A page that wants a trajectory in the browser needs
+a kernel that integrates, which is a different program from the three solvers that exist.
 
-## Dynamics
+Done means: `emit --format wasm` on `examples/quarter-car` writes a kernel whose trajectory agrees
+with Python's to `1e-9` over the study, the way the kinematic kernels agree on a pose.
 
-v2.0 (accelerations and reactions) and v2.1 (time stepping with projection, the energy test, and
-a `dynamics` study shape with a CLI path) are implemented and tested. Remaining, per
-[`dynamics.md`](dynamics.md) §7: v2.2 — four corners, a chassis body and a contact-patch load.
+## Dynamics v2.3: four corners, and a load that arrives through the tyre
+
+v2.0 (accelerations and reactions), v2.1 (time stepping, the energy test, the CLI path) and v2.2
+(`examples/quarter-car`: a heaving chassis, a coil-over, the tyre on a road plane) are implemented
+and tested. Measured for the next step: a four-corner model compiles — 13 moving bodies, 91
+unknowns, 167 s to derive, 11 ms per Jacobian — so it is usable for a figure and not for real time.
+
+Remaining, per [`dynamics.md`](dynamics.md) §7: the chassis as a full body with its own compliance,
+and a load that arrives through the contact patch rather than at the wheel centre. The quarter car's
+`coil` is a spring with no damper, which is what the book's §1.6 quotes.
 
 ## The UI
 
