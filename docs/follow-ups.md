@@ -31,18 +31,10 @@ it.
 | An end-to-end CLI test | the library is covered; `check`, `solve` and `emit` are exercised by hand and by CI shell steps, not by a test |
 | A sanity check on the toe curve | the steering arm was lengthened until bump steer was believable (±0.6°); it wants an engineer's eye, not a test |
 
-## The dynamics acceleration rebuilds the mass matrix 2n+2 times
-
-`velocity_products` takes a finite-difference gradient of `½ q̇ᵀM q̇` over `q`, so one acceleration
-costs `2n+2` mass-matrix evaluations — 58 for the quarter car, on every RK4 stage of every step.
-It is the bulk of a trajectory's cost. The term is exact and the trajectories are short, so this is
-a performance item, not a correctness one.
-
-Done means: the gradient of the kinetic energy is assembled per body from the same Jacobians the
-mass matrix already builds, and the quarter-car energy test still passes with the same drift.
-
 ## Done
 
+- **The velocity products are per body**: `37.0 ms → 10.3 ms` per acceleration on the quarter car,
+  with the same energy drift ([`decisions.md`](decisions.md) round 26).
 - **The kernel's equilibrium path** is the KKT system, so a bush at a ball joint compiles and agrees
   with Python to `1e-9` ([`decisions.md`](decisions.md) round 25).
 - **A compliant upper joint and a stiffness axis**: `examples/double-wishbone-ubj` sweeps the bush
