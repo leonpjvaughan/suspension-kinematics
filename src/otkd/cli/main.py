@@ -136,12 +136,36 @@ def _solve(model: Model, args) -> int:
     result = sweep(model)
     data = payload(result)
     if args.json_path:
-        Path(args.json_path).write_text(json.dumps(data, indent=2))
+        Path(args.json_path).write_text(json.dumps(_with_trace(result, data), indent=2))
     if args.csv_path:
         _write_csv(result, args.csv_path)
     if not args.quiet:
         print(_table(result))
     return 0
+
+
+def _with_trace(result, data: dict) -> dict:
+    """The payload, plus the descent a figure might want to plot.
+
+    The committed payload reports one converged iterate for a model with springs, because the path
+    of a stiff equilibrium solve is not reproducible between two machines while every frame of the
+    payload is. A *run* is not an artefact, so `--json` also carries the path of the representative
+    frame, unrounded, for a page that wants to show the descent — and the page should say where its
+    numbers came from, which is why this key is separated from `iterations`.
+    """
+    representative = result.frames[data["meta"]["representative_frame"]]
+    if not representative.history:
+        return data
+    data = dict(data)
+    data["trace"] = [
+        {
+            "k": k,
+            "residual": [float(value) for value in residual],
+            "q": [float(value) for value in q],
+        }
+        for k, (q, residual) in enumerate(representative.history)
+    ]
+    return data
 
 
 def _solve_dynamics(model: Model, args) -> int:
