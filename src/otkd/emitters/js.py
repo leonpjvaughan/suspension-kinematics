@@ -36,12 +36,10 @@ AXIS_FIGURES = 6
 #: between machines in its last bits, so its digits are not the model's. Reporting it as zero is
 #: both honest and the only way the artefact can be byte-identical.
 RESIDUAL_FLOOR = 1e-9
-#: Significant figures for the residual trace of an equilibrium solve. Every frame of a sweep is
-#: seeded from its predecessor, whose last bits a different LAPACK moves, and a stiff model
-#: amplifies that into a few per cent of the *first* iterate's residual — which is a digit at three
-#: figures and none at one. A kinematic solve is a root-find from the design pose with no such
-#: history, so it keeps three.
-EQUILIBRIUM_RESIDUAL_FIGURES = 1
+#: The floor for an equilibrium solve's residual. Its converged value is at the solver's own
+#: tolerance — 1e-9 of the load scale or better — and its last digits are the arithmetic's, not the
+#: model's, so a compliant payload reports it as zero.
+EQUILIBRIUM_RESIDUAL_FLOOR = 1e-6
 #: Decimal places per quantity: angles to four, lengths to six. One table, because a frame entry
 #: and a trajectory sample are the same numbers and must round the same way.
 QUANTITY_PLACES = {
@@ -204,8 +202,16 @@ def _iterations(sweep: Sweep, index: int) -> list[dict]:
 
     frame = sweep.frames[index]
     rows = [i for i, row in enumerate(sweep.problem.rows) if row.group in (HARD, NORM, DRIVER)]
-    figures = EQUILIBRIUM_RESIDUAL_FIGURES if sweep.problem.has_springs else RESIDUAL_FIGURES
+    springs = sweep.problem.has_springs
     history = frame.history
+    if springs:
+        # A compliant solve's *path* is not reproducible and cannot be made so. Every frame is
+        # seeded from its predecessor, a different LAPACK moves that seed's last bits, and a stiff
+        # joint amplifies them: CI showed the first iterate's residual differing by a factor of two
+        # between two machines while every frame of the payload was byte-identical. What is
+        # reproducible is where it arrived, so that is what the trace reports — with the singular
+        # values of the solution's own Jacobian, which is the part worth reading.
+        history = history[-1:]
     if len(history) > MAX_ITERATIONS:
         stride = (len(history) - 1) / (MAX_ITERATIONS - 1)
         history = [history[min(len(history) - 1, round(k * stride))] for k in range(MAX_ITERATIONS)]
@@ -219,7 +225,10 @@ def _iterations(sweep: Sweep, index: int) -> list[dict]:
         out.append(
             {
                 "k": k,
-                "residual": [_sig(v, figures, floor=RESIDUAL_FLOOR) for v in residual],
+                "residual": [
+                    _sig(v, RESIDUAL_FIGURES, floor=EQUILIBRIUM_RESIDUAL_FLOOR if springs else RESIDUAL_FLOOR)
+                    for v in residual
+                ],
                 "singular_values": [_sig(v, SINGULAR_FIGURES) for v in values],
             }
         )

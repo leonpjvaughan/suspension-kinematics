@@ -674,12 +674,16 @@ were ruled out.
 4. **A frame that fails from its predecessor is retried from the design pose.** Predecessor seeding
    is for branch continuity and is the wrong seed for a joint that has just become very stiff; the
    design pose satisfies the constraints by construction.
-5. **The iterate trace is reported to one significant figure.** CI caught what a local run could
-   not: the compliant payload's frames were byte-identical and its `iterations` trace was not,
-   because every frame is seeded from its predecessor, a different LAPACK moves that seed's last
-   bits, and a stiff model amplifies them into a few per cent of the first iterate's residual — a
-   digit at three figures and none at one. A kinematic solve is a root-find from the design pose
-   with no such history, so it keeps three figures and stayed byte-identical throughout.
+5. **A compliant solve reports where it arrived, not the path.** CI caught what a local run could
+   not: the frames were byte-identical and the `iterations` trace was not. Every frame is seeded
+   from its predecessor, a different LAPACK moves that seed's last bits, and a stiff joint amplifies
+   them — the first iterate's residual differed by a *factor of two* between two machines on the
+   ubj model. Reporting the trace to one significant figure was the first attempt and it is not
+   enough, because the path is not reproducible at any precision. So a model with springs reports a
+   single entry: the converged state, its residual floored at `1e-6` (below which the number is the
+   arithmetic's), and the singular values of the solution's own Jacobian — which is the part of the
+   trace worth reading anyway. A kinematic solve is a root-find from the design pose with no such
+   history, keeps its full descent, and stayed byte-identical throughout.
 6. **What it cost and what it bought.** The compliant payload's 243 published numbers are
    unchanged — regenerating it moves only the `iterations` trace, which is a different residual
    vector (39 entries rather than 21) and one more accepted iterate. The solver is slower: the
