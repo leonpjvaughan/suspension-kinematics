@@ -22,22 +22,31 @@ Requested by `maths-site` ([`handoff-from-maths-site.md`](handoff-from-maths-sit
 accepted in the package's shape, not the book's. **Measured, and it is not the config change it
 looked like.**
 
-**A compliant spherical joint is already expressible, and does not yet solve.** No new kind is
+**A compliant spherical joint is already expressible, and does not solve.** No new kind is
 needed: a per-joint `modes:` override says `{tx: spring, ty: spring, tz: spring}` on `uca-up`, and
-`geometry.yaml` gives the three compliances. The model then classifies as `equilibrium` with three
-free directions and checks clean. What it does not do is converge:
+`geometry.yaml` gives the three compliances. The model classifies as `equilibrium` with three free
+directions and checks clean — and then the equilibrium does not converge, at any stiffness from
+0.2 to 100 MN/m, from any of six starting poses, with a residual between 0.056 and 16.
 
-| what was measured | result |
-|---|---|
-| compile, three compliant components at one frame joint | **63 s** before the gradient was assembled from the rows, ~1 s after (`decisions.md` round 22) |
-| equilibrium at k = 0.2, 1, 10, 100 MN/m | **fails at every one**, stopping on `xtol` with a residual of **0.056** — about 300 N of unbalanced force |
-| the same model at the design pose | hard rows exact (7e-18), so it is not a constraint problem |
+Five explanations were tested and **four are ruled out**:
 
-The residual is discontinuous, and the likely mechanism is the null-space sign anchoring: it
-anchors each basis column against a *spring row's* gradient, and three compliant rows at one joint
-have gradients that can be near-parallel, so the sign flickers and the trust region stops at a
-kink. Route: anchor against a direction carried over from the previous evaluation, or against the
-design pose, instead of against the spring rows.
+| hypothesis | measurement | verdict |
+|---|---|---|
+| the model is redundant | hard rows rank 18 of 18; with the three spring rows, 21 of 21, smallest singular value 0.086 | ruled out |
+| the springs cannot reach the free directions | `J_spring Z` is a well-conditioned 3×3 (singular values 0.74, 0.39, 0.25) | ruled out |
+| it is a force-balance problem | the residual is **the same at 3.5 kN and at 3.5 N** (0.056 in both) | ruled out |
+| the null-basis sign anchoring flickers | disabling the anchoring entirely leaves it at 0.098 | ruled out |
+| the projected potential is not smooth in `q` | consistent with everything above: the residual does not move with the load, and `Z(q)` comes from an SVD whose basis rotates — and whose columns can reorder — as `q` moves, so the finite-difference Jacobian is noise and the trust region stops on `xtol` | **the live hypothesis** |
+
+The route that follows is to stop projecting: solve the **saddle-point KKT system** for `(q, λ)`,
+
+```
+[ ∇Π(q) − Φ_q(q)ᵀλ − J(q)ᵀF ]   = 0
+[ Φ(q)                        ]
+```
+
+which is square, smooth, and needs no null-space basis at all. The package already solves that
+shape for the dynamics accelerations (`docs/dynamics.md`), so the machinery and the reasoning exist.
 
 **A stiffness axis is a study change, not an example.** A number iterated *outside* the travel
 driver, so one run produces the ladder; each inner sweep seeded from the **design pose**, because a

@@ -620,15 +620,17 @@ Both are accepted, the shape is changed in three places, and one request is drop
    assembly, that model compiles in about a second, and the committed compliant payload regenerates
    byte-identically, so the number is unchanged. `Problem.hessian` was dead code carrying the same
    defect and was removed with it.
-2. **The measurement the follow-up needed, and it is a no for now.** The same three-component joint
-   classifies as `equilibrium`, checks clean, and **does not converge** — at k = 0.2, 1, 10 and
-   100 MN/m it stops on `xtol` with a residual of 0.056, about 300 N of unbalanced force. The hard
-   rows are exact at the design pose (7e-18), so this is the projected-potential part, and the
-   likely mechanism is the null-basis sign anchoring: it anchors each column against a *spring
-   row's* gradient, and several compliant rows at one joint can have near-parallel gradients, so
-   the sign flickers and the trust region stops at a kink. Recorded in
-   [`follow-ups.md`](follow-ups.md) with the route: anchor against a carried-over direction or the
-   design pose rather than against the spring rows.
+2. **The measurement the follow-up needed, and it is a no for now.** The three-component joint
+   classifies as `equilibrium`, checks clean, and **does not converge**: at k = 0.2, 1, 10 and
+   100 MN/m, from six starting poses, the residual lands between 0.056 and 16. Four explanations
+   were tested and ruled out — redundancy (21 of 21 rows independent, smallest singular value
+   0.086), springs that cannot reach the free directions (`J_spring Z` well conditioned), force
+   balance (the residual is **identical at 3.5 kN and at 3.5 N**), and the null-basis sign
+   anchoring (disabling it leaves the residual at 0.098). What is left is smoothness: `Z(q)` is an
+   SVD basis of the hard Jacobian, and that basis rotates — and its columns can reorder — as `q`
+   moves, so the numerically differentiated residual is noise and the trust region stops on `xtol`.
+   The route is the saddle-point KKT system in `(q, λ)`, which is square, smooth, and needs no
+   basis; [`follow-ups.md`](follow-ups.md) records it with the measurements.
 3. **A stiffness axis is a study shape, not an example.** An axis is a *number* iterated outside
    the travel driver; `axes:` joins `drivers:` and `loads:` in `study.yaml`, each entry naming a
    `g` symbol with a law. Nesting is axes outside, drivers inside, and each inner sweep is seeded
