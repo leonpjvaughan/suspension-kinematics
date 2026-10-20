@@ -642,3 +642,42 @@ Both are accepted, the shape is changed in three places, and one request is drop
 4. **The book's ladder stays gated on a measurement.** Until the equilibrium converges and a run
    shows camber responding, the package says no rather than shipping a ladder of the right shape
    and the wrong physics.
+
+---
+
+## Round 23: the equilibrium is solved as the KKT system it is (accepted)
+
+The projected formulation (`Z(q)ᵀ∇Π = 0`) was right for one compliant component and wrong for
+three at one frame joint, and the reason is now measured rather than guessed: `Z(q)` comes from an
+SVD, that basis rotates as `q` moves, and the numerically differentiated residual is then noise —
+the tell being that the residual did not move when the load changed by three orders of magnitude,
+which no force-balance residual can do. `follow-ups.md` has the table of the four hypotheses that
+were ruled out.
+
+`equilibrium` now solves the saddle point it always was, in `(q, λ)`:
+
+```
+[ ∇Π(q) − Φ_q(q)ᵀλ − J(q)ᵀF ]   = 0
+[ Φ(q)                        ]
+```
+
+1. **Square, smooth, and no basis.** `λ` carries the reaction in every constrained row — drivers
+   included, so an actuator's force is now a solved number rather than an implicit one. Nothing in
+   the residual needs an SVD, so nothing about it can flicker.
+2. **The two blocks are accepted separately.** They are not the same unit: a constraint left at
+   `1e-8` is a metre of violation, while a force balance left at `1e-8` is `5e-5 N` of the load.
+   The old formulation could report one number because it had one kind of row; this one cannot.
+3. **`x_scale="jac"`, and `max_nfev=1000`.** The first is not optional — the default fails to
+   converge on the committed compliant model. The second is generous because a joint at 100 MN/m
+   needs a few hundred evaluations on the one frame where the load first swings it; a well-behaved
+   frame uses five.
+4. **A frame that fails from its predecessor is retried from the design pose.** Predecessor seeding
+   is for branch continuity and is the wrong seed for a joint that has just become very stiff; the
+   design pose satisfies the constraints by construction.
+5. **What it cost and what it bought.** The compliant payload's 243 published numbers are
+   unchanged — regenerating it moves only the `iterations` trace, which is a different residual
+   vector (39 entries rather than 21) and one more accepted iterate. The solver is slower: the
+   system is larger and the Jacobian is still finite-differenced. And it bought the thing the book
+   asked for: a ball joint compliant in three components now converges at 0.2, 1, 10 and
+   100 MN/m, and camber responds to it monotonically — 2.0828°, 2.0397°, 2.0291°, 2.0280° over the
+   travel — which is the measurement item 83 was gated on.

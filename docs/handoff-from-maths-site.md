@@ -8,10 +8,12 @@
 > [`follow-ups.md`](follow-ups.md)'s "A compliant upper joint, and a stiffness axis", in the
 > package's shape: a number iterated outside the travel driver, each inner sweep seeded from the
 > design pose, and the ladder gated on a measurement that camber responds. **That measurement has
-> now been made, and it is a no so far**: a ball joint compliant in three components classifies
-> cleanly and then does not converge at any stiffness, with four explanations ruled out by
-> measurement and the projected-potential basis left as the live one. The route is the saddle-point
-> KKT system; [`follow-ups.md`](follow-ups.md) has the table. Request 3 is dropped for
+> now been made, and it is a yes**: the equilibrium was the wall — a joint compliant in three
+> components would not converge in the projected formulation — and solving the saddle point
+> directly fixed it. Camber responds to the ball joint's compliance monotonically (2.0828° of travel
+> at 0.2 MN/m down to 2.0280° at 100 MN/m), so the ladder is real. What remains before your §1.5
+> can be generated is the export shape: an example with that joint, and a stiffness axis so that one
+> run yields the ladder. [`follow-ups.md`](follow-ups.md) has the numbers. Request 3 is dropped for
 > want of an owner in the book's queue; it can return with an item. The acceptance is the package's
 > numbers, not the page's rounding — where they disagree, the page changes.
 

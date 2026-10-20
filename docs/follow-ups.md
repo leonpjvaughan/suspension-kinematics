@@ -22,31 +22,25 @@ Requested by `maths-site` ([`handoff-from-maths-site.md`](handoff-from-maths-sit
 accepted in the package's shape, not the book's. **Measured, and it is not the config change it
 looked like.**
 
-**A compliant spherical joint is already expressible, and does not solve.** No new kind is
-needed: a per-joint `modes:` override says `{tx: spring, ty: spring, tz: spring}` on `uca-up`, and
-`geometry.yaml` gives the three compliances. The model classifies as `equilibrium` with three free
-directions and checks clean — and then the equilibrium does not converge, at any stiffness from
-0.2 to 100 MN/m, from any of six starting poses, with a residual between 0.056 and 16.
+**A compliant spherical joint works, and the ladder is real.** No new kind is needed: a per-joint
+`modes:` override says `{tx: spring, ty: spring, tz: spring}` on `uca-up`, and `geometry.yaml` gives
+the three compliances. The equilibrium was the wall — the projected formulation could not converge
+for three compliant components at one frame joint, and the KKT formulation can
+([`decisions.md`](decisions.md) round 23). Measured on the book's own question, with the loads the
+compliant example carries:
 
-Five explanations were tested and **four are ruled out**:
-
-| hypothesis | measurement | verdict |
+| stiffness | camber over the travel | at full bump |
 |---|---|---|
-| the model is redundant | hard rows rank 18 of 18; with the three spring rows, 21 of 21, smallest singular value 0.086 | ruled out |
-| the springs cannot reach the free directions | `J_spring Z` is a well-conditioned 3×3 (singular values 0.74, 0.39, 0.25) | ruled out |
-| it is a force-balance problem | the residual is **the same at 3.5 kN and at 3.5 N** (0.056 in both) | ruled out |
-| the null-basis sign anchoring flickers | disabling the anchoring entirely leaves it at 0.098 | ruled out |
-| the projected potential is not smooth in `q` | consistent with everything above: the residual does not move with the load, and `Z(q)` comes from an SVD whose basis rotates — and whose columns can reorder — as `q` moves, so the finite-difference Jacobian is noise and the trust region stops on `xtol` | **the live hypothesis** |
+| 0.2 MN/m | 2.0828° | −0.2378° |
+| 1 MN/m | 2.0397° | −0.9531° |
+| 10 MN/m | 2.0291° | −1.1112° |
+| 100 MN/m | 2.0280° | −1.1270° |
 
-The route that follows is to stop projecting: solve the **saddle-point KKT system** for `(q, λ)`,
+Monotone, converging to the rigid answer, and the stiffness that matters is the ball joint's — which
+is the ladder the book could not produce from a compliant *tie rod*.
 
-```
-[ ∇Π(q) − Φ_q(q)ᵀλ − J(q)ᵀF ]   = 0
-[ Φ(q)                        ]
-```
-
-which is square, smooth, and needs no null-space basis at all. The package already solves that
-shape for the dynamics accelerations (`docs/dynamics.md`), so the machinery and the reasoning exist.
+What is left is the export shape: a model in `examples/` with that joint, and a stiffness axis, so
+that one run yields the ladder rather than four.
 
 **A stiffness axis is a study change, not an example.** A number iterated *outside* the travel
 driver, so one run produces the ladder; each inner sweep seeded from the **design pose**, because a
@@ -55,9 +49,8 @@ for continuity within a sweep. `Sweep.frames` carries one `primary` value today.
 unaffected (rank is a property of the model) and the kernel needs no ABI change — it already takes
 the compliance as a number slot.
 
-Done means: the equilibrium converges for a ball joint that is compliant in three components; an
-example sweeps stiffness and its export reports camber at rest and over the travel for each value;
-and a **measurement** shows camber responds to that compliance. If it does not, the answer is no —
+Done means: an example sweeps stiffness and its export reports camber at rest and over the travel
+for each value. The equilibrium converging, and camber responding, are done and measured above. If it does not, the answer is no —
 an approximation built from a compliant *distance* joint would give a ladder of the right shape and
 the wrong physics, which is worse than no ladder.
 
