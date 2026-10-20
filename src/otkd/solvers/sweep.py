@@ -100,7 +100,16 @@ def sweep(model: Model) -> Sweep:
 
         if kind == "equilibrium":
             if loads:
-                q, _, history = equilibrium(system, guess, loads)
+                try:
+                    q, _, history = equilibrium(system, guess, loads)
+                except SolverError:
+                    # The predecessor is the right seed for branch continuity and the wrong one
+                    # for a joint that has just become very stiff. The design pose satisfies the
+                    # constraints by construction, so it is worth one more attempt before the
+                    # frame is called unsolvable.
+                    if np.array_equal(guess, seed):
+                        raise
+                    q, _, history = equilibrium(system, seed, loads)
             else:
                 # No load, no preload: the equilibrium deflection is zero, so the compliant
                 # model is the rigid one and solving it as a root-find would be theatre.

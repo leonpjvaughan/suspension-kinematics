@@ -1,22 +1,25 @@
 """Compliant components: the equilibrium of a loaded, bushed mechanism.
 
-With a `spring` component the joint's coordinate is free but resisted, so its equation is not
-`g = 0`; the system is closed by stationarity of the potential in the remaining free
-directions. The residual is
+With a `spring` component a joint's coordinate is free but resisted, so its equation is not
+`g = 0`. The equilibrium is the saddle point of
 
-    r(q) = [ g_hard(q) ; Z(q)ᵀ ∇Π(q) / f_ref ]
+    Π(q) = ½ Σ gᵢ(q)²/cᵢ − Σ F·x(q)     subject to     Φ(q) = 0
 
-where `Z` is an orthonormal basis of the null space of the hard-plus-driver Jacobian and
-`Π = ½ Σ g_i²/c_i − Σ F·x` is the spring energy minus the work of the loads. Every root of
-`r` satisfies all the hard constraints and force balance along each compliance, exactly —
-this is the algebraic equilibrium of the book's §4, not a stiff-constraint approximation.
+and it is solved as the KKT system it is, in `(q, λ)`:
 
-The constraint Jacobian inside `r` is symbolic and exact. The derivative of the *projected
-potential* is not: `∂/∂q (Zᵀ∇Π)` contains `(∂Z/∂q)ᵀ∇Π`, which is zero at the solution but
-not on the way to it, and the null-space basis genuinely changes with `q`. Supplying the
-truncated analytic block makes the trust region stall, so the solve differentiates the
-residual numerically. That is a deliberate, measured choice: eight residual evaluations per
-frame against a hundred and ninety-seven.
+    [ ∇Π(q) − Φ_q(q)ᵀ λ ]   = 0
+    [ Φ(q)              ]
+
+which is square, smooth, and needs no null-space basis. `λ` is also the number a suspension
+engineer wants: the reaction in every constrained row, drivers included.
+
+**Why not the projected form.** The first implementation projected the potential onto a null-space
+basis of `Φ_q` and solved the smaller system `Z(q)ᵀ∇Π = 0`. It was right for one compliant
+component and wrong for three at one frame joint: `Z(q)` comes from an SVD, and that basis rotates
+— and its columns can reorder — as `q` moves, so the numerically differentiated residual is noise
+and the trust region stops on `xtol` with the force balance still out. The tell was that the
+residual did not move when the load changed by three orders of magnitude, which no force-balance
+residual can do. [`decisions.md`](../docs/decisions.md) round 23 has the measurements.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ def equilibrium(
 ) -> tuple[np.ndarray, int, list[tuple[np.ndarray, np.ndarray]]]:
     problem = system.problem
     rows = system.constrained
+    springs = system.springs
     n = problem.n
     free = n - len(rows)
     if free < 1:
@@ -46,51 +50,43 @@ def equilibrium(
     force_scale = max(1.0, float(sum(np.linalg.norm(force) for _, _, force in loads)))
     history: list[tuple[np.ndarray, np.ndarray]] = []
 
-    def null_basis(q: np.ndarray) -> np.ndarray:
-        jac = system.jacobian(q, rows)
-        _, _, vt = np.linalg.svd(jac, full_matrices=True)
-        basis = vt[len(rows) :].T
-        # Singular vectors are defined up to sign, and an arbitrary anchor can flip between
-        # two nearby evaluations — a discontinuity no Jacobian survives. Anchor against the
-        # compliant rows' own gradients, which point along the free directions: the dot
-        # product is O(1) and smooth, so the sign cannot flicker.
-        springs = system.springs
-        if springs:
-            anchor = system.jacobian(q, springs)
-            for column in range(basis.shape[1]):
-                reference = anchor[min(column, len(springs) - 1)]
-                if float(basis[:, column] @ reference) < 0:
-                    basis[:, column] *= -1.0
-        return basis
-
-    def gradient(q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        grad = problem.gradient(q, system.g, system.theta)
+    def residual(x: np.ndarray) -> np.ndarray:
+        q, lam = x[:n], x[n:]
+        grad = problem.gradient(q, system.g, system.theta, springs)
         for body, point, force in loads:
             point_jac, _ = problem.point_derivatives(body, point)
             jacobian = np.asarray(point_jac(*q, *system.g), dtype=float).reshape(3, n)
             grad = grad - jacobian.T @ force
-        return grad, null_basis(q)
-
-    def residual(q: np.ndarray) -> np.ndarray:
-        values = system.residual(q, rows)
-        grad, basis = gradient(q)
-        return np.concatenate([values, basis.T @ grad / force_scale])
+        stationarity = (grad - system.jacobian(q, rows).T @ lam) / force_scale
+        return np.concatenate([stationarity, system.residual(q, rows)])
 
     def record(x: np.ndarray, *args) -> None:
         """Accepted iterates only, so `iterations[]` means what it means elsewhere."""
-        history.append((np.asarray(x).copy(), residual(x)))
+        history.append((np.asarray(x[:n]).copy(), residual(x)))
 
+    start = np.concatenate([np.asarray(q0, dtype=float), np.zeros(len(rows))])
+    # `max_nfev` is generous because a joint at 100 MN/m needs a few hundred evaluations on the
+    # frame where the load first swings it; a well-behaved frame uses five.
     result = scipy_least_squares(
         residual,
-        np.asarray(q0, dtype=float),
+        start,
         method="trf",
+        x_scale="jac",
         callback=record,
         xtol=tol,
         ftol=tol,
         gtol=tol,
-        max_nfev=200,
+        max_nfev=1000,
     )
-    error = float(np.max(np.abs(result.fun)))
-    if error > 1e-8:
-        raise SolverError(f"equilibrium did not converge: {result.message}", residual=error)
-    return result.x, int(result.nfev), history
+    # The two blocks are measured separately, because they are not the same unit: a constraint
+    # left at 1e-8 is a metre of violation, which is a different claim from a force balance left
+    # at 1e-8 of the load. The projected formulation could report one number because it had one
+    # kind of row; this one cannot.
+    constraints = float(np.max(np.abs(result.fun[n:]))) if len(rows) else 0.0
+    stationarity = float(np.max(np.abs(result.fun[:n])))
+    if constraints > 1e-12 or stationarity > 1e-9:
+        raise SolverError(
+            f"equilibrium did not converge: {result.message}",
+            residual=max(constraints, stationarity),
+        )
+    return result.x[:n], int(result.nfev), history

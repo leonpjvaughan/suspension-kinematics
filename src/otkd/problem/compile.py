@@ -302,7 +302,7 @@ class Problem:
     def has_springs(self) -> bool:
         return bool(self.spring)
 
-    def gradient(self, q, g, theta) -> np.ndarray:
+    def gradient(self, q, g, theta, rows=None) -> np.ndarray:
         """The gradient of the spring potential, assembled row by row.
 
         `Π = ½ Σ gᵢ²/cᵢ` is a sum over the compliant rows, so its gradient is
@@ -310,16 +310,20 @@ class Problem:
         Differentiating the sum symbolically instead produces one enormous expression: it was
         fine for a single compliant component (the tie rod) and unusable for three at one frame
         joint, where the model took 63 s to compile and the gradient never returned.
+
+        `rows` restricts the sum to the rows that actually deflect; a component whose compliance
+        is zero is a rigid constraint, not a spring, and `1/0` is not a force.
         """
-        if not self.has_springs:
+        indices = self.spring if rows is None else list(rows)
+        if not indices:
             return np.zeros(self.n)
         values = self.evaluate(q, g, theta)
-        rows = self.jacobian(q, g, theta)
+        jacobian = self.jacobian(q, g, theta)
         compliance = self.compliance(g)
         out = np.zeros(self.n)
-        for i in self.spring:
+        for i in indices:
             name, component = self.rows[i].name.split(".", 1)
-            out += (values[i] / compliance[(name, component)]) * rows[i]
+            out += (values[i] / compliance[(name, component)]) * jacobian[i]
         return out
 
     def point_derivatives(self, body: str, point: str) -> tuple[Callable, Callable]:
