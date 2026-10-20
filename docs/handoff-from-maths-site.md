@@ -7,7 +7,17 @@
 > (`bundle: otkd-bundle-2`). Request 1 is accepted as
 > [`follow-ups.md`](follow-ups.md)'s "A compliant upper joint, and a stiffness axis", in the
 > package's shape: a number iterated outside the travel driver, each inner sweep seeded from the
-> design pose, and the ladder gated on a measurement that camber responds. **That measurement has
+> design pose, and the ladder gated on a measurement that camber responds.
+>
+> **The ladder exists.** `examples/double-wishbone-ubj` is the mechanism with the compliance moved
+> to the upper ball joint, and its study sweeps 0.2, 1, 10 and 100 MN/m in one run — 164 frames,
+> with `sweep.axes` naming the three numbers that moved and every frame carrying its stiffness.
+> Camber over the travel: **2.0828°, 2.0397°, 2.0291°, 2.0280°**, converging to the rigid answer.
+> One caveat for a page: the compiled kernel refuses that model ("an equilibrium kernel expects one
+> free direction; this model has 3"), so an *interactive* ladder needs the kernel work in
+> [`follow-ups.md`](follow-ups.md); the export is static for now.
+>
+> **That measurement has
 > now been made, and it is a yes**: the equilibrium was the wall — a joint compliant in three
 > components would not converge in the projected formulation — and solving the saddle point
 > directly fixed it. Camber responds to the ball joint's compliance monotonically (2.0828° of travel

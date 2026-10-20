@@ -45,6 +45,22 @@ changing a contract, and update them in the same commit as the code.
 - **Change a contract and you change `HANDOFF.md`'s consequences**, not the file. Record the
   divergence in `docs/decisions.md` with the reason.
 
+## Solver findings are teaching material
+
+This package exists to be explained, so a finding is not finished when the code is fixed — it is
+finished when the textbook can teach it. The textbook is `maths-site`, and what it asks of the
+package is [`docs/handoff-from-maths-site.md`](docs/handoff-from-maths-site.md).
+
+- Record a finding in `docs/decisions.md` as usual, **and** say in the handoff whether the book
+  could use it: a figure, a worked step, a "here is how you would know" box.
+- The ones worth the most have a **tell** — a measurement that separates two explanations. The
+  energy error that did not shrink when the step was quartered. The residual that did not move
+  when the load changed by three orders of magnitude. The iteration trace that differed between
+  two machines while every frame was identical. A wrong number with a reproducible reason teaches
+  more than a right one.
+- Name the insight, the measurement and where it came from. Do not write the chapter's prose here;
+  the book decides how to teach it.
+
 ## Commands
 
 ```console

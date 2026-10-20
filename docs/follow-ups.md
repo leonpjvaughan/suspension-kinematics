@@ -16,44 +16,6 @@ v2.0 (accelerations and reactions) and v2.1 (time stepping with projection, the 
 a `dynamics` study shape with a CLI path) are implemented and tested. Remaining, per
 [`dynamics.md`](dynamics.md) §7: v2.2 — four corners, a chassis body and a contact-patch load.
 
-## A compliant upper joint, and a stiffness axis
-
-Requested by `maths-site` ([`handoff-from-maths-site.md`](handoff-from-maths-site.md) §1) and
-accepted in the package's shape, not the book's. **Measured, and it is not the config change it
-looked like.**
-
-**A compliant spherical joint works, and the ladder is real.** No new kind is needed: a per-joint
-`modes:` override says `{tx: spring, ty: spring, tz: spring}` on `uca-up`, and `geometry.yaml` gives
-the three compliances. The equilibrium was the wall — the projected formulation could not converge
-for three compliant components at one frame joint, and the KKT formulation can
-([`decisions.md`](decisions.md) round 23). Measured on the book's own question, with the loads the
-compliant example carries:
-
-| stiffness | camber over the travel | at full bump |
-|---|---|---|
-| 0.2 MN/m | 2.0828° | −0.2378° |
-| 1 MN/m | 2.0397° | −0.9531° |
-| 10 MN/m | 2.0291° | −1.1112° |
-| 100 MN/m | 2.0280° | −1.1270° |
-
-Monotone, converging to the rigid answer, and the stiffness that matters is the ball joint's — which
-is the ladder the book could not produce from a compliant *tie rod*.
-
-What is left is the export shape: a model in `examples/` with that joint, and a stiffness axis, so
-that one run yields the ladder rather than four.
-
-**A stiffness axis is a study change, not an example.** A number iterated *outside* the travel
-driver, so one run produces the ladder; each inner sweep seeded from the **design pose**, because a
-soft joint and a stiff joint are different branches and `solvers/sweep.py`'s predecessor seeding is
-for continuity within a sweep. `Sweep.frames` carries one `primary` value today. The classifier is
-unaffected (rank is a property of the model) and the kernel needs no ABI change — it already takes
-the compliance as a number slot.
-
-Done means: an example sweeps stiffness and its export reports camber at rest and over the travel
-for each value. The equilibrium converging, and camber responding, are done and measured above. If it does not, the answer is no —
-an approximation built from a compliant *distance* joint would give a ladder of the right shape and
-the wrong physics, which is worse than no ladder.
-
 ## The UI
 
 Deferred, and possibly never built. [`ui.md`](ui.md) is the design if it is revived; the
@@ -69,8 +31,35 @@ it.
 | An end-to-end CLI test | the library is covered; `check`, `solve` and `emit` are exercised by hand and by CI shell steps, not by a test |
 | A sanity check on the toe curve | the steering arm was lengthened until bump steer was believable (±0.6°); it wants an engineer's eye, not a test |
 
+## The compiled kernel's equilibrium path is one degree of freedom
+
+`emit --format wasm` refuses a ball joint compliant in three translations with "an equilibrium
+kernel expects one free direction; this model has 3" — a loud, specific refusal, and the release
+manifest records it by name. The Python ladder is unaffected. An *interactive* version of §1.5
+needs the Rust equilibrium solver generalised from the tie-rod corner (one compliance, one free
+direction) to `n` free directions, which is the same shape as the Python solve: the KKT system in
+`(q, λ)`, which is square and needs no basis.
+
+Done means: the kernel solves `examples/double-wishbone-ubj` at every stiffness in its table and
+agrees with Python on the metrics to `1e-9`, the way the tie-rod corner does.
+
+## The dynamics acceleration rebuilds the mass matrix 2n+2 times
+
+`velocity_products` takes a finite-difference gradient of `½ q̇ᵀM q̇` over `q`, so one acceleration
+costs `2n+2` mass-matrix evaluations — 58 for the quarter car, on every RK4 stage of every step.
+It is the bulk of a trajectory's cost. The term is exact and the trajectories are short, so this is
+a performance item, not a correctness one.
+
+Done means: the gradient of the kinetic energy is assembled per body from the same Jacobians the
+mass matrix already builds, and the quarter-car energy test still passes with the same drift.
+
 ## Done
 
+- **A compliant upper joint and a stiffness axis**: `examples/double-wishbone-ubj` sweeps the bush
+  at the upper ball joint over 0.2, 1, 10 and 100 MN/m in one run, and camber responds to it
+  monotonically (2.0828° of travel at 0.2 MN/m, 2.0280° at 100 MN/m, converging to the rigid
+  answer). The equilibrium had to be solved as a KKT system first
+  ([`decisions.md`](decisions.md) rounds 23–24).
 - **The book's geometry** is reconciled on its side at 0.4.0: `maths-site` adopted
   `tyre-radius = 0.200` and the ground plane it implies, and its roll centre agrees with the export
   to 1 mm. Their words: the entry can be closed from where they sit.

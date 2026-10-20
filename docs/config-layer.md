@@ -372,6 +372,10 @@ drivers:
   - actuator: lca-drive
     law: {kind: linear, from: -0.35, to: 0.35, steps: 81}
 
+axes:                         # geometry numbers swept outside the drivers
+  - numbers: [compliance.uca-up.tx, compliance.uca-up.ty, compliance.uca-up.tz]
+    law: {kind: table, values: [5.0e-6, 1.0e-6, 1.0e-7, 1.0e-8]}
+
 loads:                        # only meaningful when some component is `spring`
   - {site: wco, force: [0, 0, -3500], law: {kind: constant}}
 
@@ -404,10 +408,17 @@ seed: previous                # previous | design
   problem over-prescribed unless the mechanism has two degrees of freedom, and validation
   says so by naming the over-prescription rather than letting least squares average two
   incompatible demands.
-- A **ladder** (the stiffness sweep of §4) is a loop over study files rather than a new
-  file format in v1: the acceptance test can write each compliance and run the same study.
-  A `parameters:` dimension is the obvious extension and is deliberately not specified
-  until §4's load case is settled (`decisions.md` §3).
+- **`axes`** sweep *geometry numbers*, one law applied to every number named, and they nest
+  outside the drivers: the drivers are swept once per axis value, so one run produces the
+  stiffness ladder §1.5 asks for rather than one export per stiffness. A number is named as the
+  compiler knows it — `compliance.uca-up.tx`, `length.tie-rod`, `point.lcaf.2` — and a name that
+  is not a number is a fault naming the file, the axis and the nearest number that does exist.
+  Every value starts a **fresh pass seeded from the design pose**, not from the pass before it:
+  a soft joint and a stiff joint are different assemblies, and `seed: previous` is about branch
+  continuity *within* a pass. Classification is per pass too, because a compliance can be swept
+  to zero, and zero is a rigid row.
+- A ladder was a loop over study files until the axis arrived; `decisions.md` round 24 records
+  what changed and why the axis is a list of numbers rather than a single one.
 
 The handoff put the sweep inside `Geometry`. It moves here, and the reason is the one in
 §1: a sweep is a question, and the mobility check ("one topology, many geometries") is

@@ -674,10 +674,48 @@ were ruled out.
 4. **A frame that fails from its predecessor is retried from the design pose.** Predecessor seeding
    is for branch continuity and is the wrong seed for a joint that has just become very stiff; the
    design pose satisfies the constraints by construction.
-5. **What it cost and what it bought.** The compliant payload's 243 published numbers are
+5. **The iterate trace is reported to one significant figure.** CI caught what a local run could
+   not: the compliant payload's frames were byte-identical and its `iterations` trace was not,
+   because every frame is seeded from its predecessor, a different LAPACK moves that seed's last
+   bits, and a stiff model amplifies them into a few per cent of the first iterate's residual — a
+   digit at three figures and none at one. A kinematic solve is a root-find from the design pose
+   with no such history, so it keeps three figures and stayed byte-identical throughout.
+6. **What it cost and what it bought.** The compliant payload's 243 published numbers are
    unchanged — regenerating it moves only the `iterations` trace, which is a different residual
    vector (39 entries rather than 21) and one more accepted iterate. The solver is slower: the
    system is larger and the Jacobian is still finite-differenced. And it bought the thing the book
    asked for: a ball joint compliant in three components now converges at 0.2, 1, 10 and
    100 MN/m, and camber responds to it monotonically — 2.0828°, 2.0397°, 2.0291°, 2.0280° over the
    travel — which is the measurement item 83 was gated on.
+
+---
+
+## Round 24: the stiffness axis, and what the kernel cannot do yet (accepted)
+
+The follow-up's last piece: one run has to produce the ladder, not four exports.
+
+1. **An axis is a list of geometry numbers and one law.** `study.axes` names the numbers —
+   `compliance.uca-up.tx`, `length.tie-rod`, `point.lcaf.2` — and applies one law to all of them,
+   because one bush is one stiffness: a joint whose three translations deflect together is one
+   axis, not three, and a book that sweeps them separately would be sweeping a joint that does not
+   exist. A `table` law carries the book's round stiffnesses, which are not evenly spaced in
+   compliance.
+2. **Axes nest outside the drivers, and each value starts a fresh pass from the design pose.**
+   `seed: previous` is branch continuity within a pass; across an axis boundary the assembly has
+   changed, so carrying the previous pose would be seeding a stiff joint from a soft one's
+   solution. Classification is per pass as well, because a compliance swept to zero is a rigid row.
+3. **A number's name drops the compiler's index when it stands alone.** `_gkey` allocates every
+   number with a trailing index, so `compliance.tie-rod.length` was `…length.0`. The index is the
+   compiler's bookkeeping, not the model's; the three components of a point keep theirs.
+4. **`sweep.axes` and a per-frame `axis` list, and nothing else changes.** A payload without axes
+   is byte-identical to what it was — the four committed exports were regenerated to prove it — and
+   a payload with them says which numbers moved and to what. An axis value is reported to
+   significant figures, because a compliance is 1e-8 and a length is 0.37.
+5. **The compiled kernel cannot solve this model, and says so.** `emit --format wasm` refuses it:
+   "an equilibrium kernel expects one free direction; this model has 3". The kernel's equilibrium
+   path was written for the tie-rod corner, where one compliance means one free direction. The
+   Python ladder is unaffected, and the release manifest records the refusal by name — but an
+   interactive version of §1.5 needs that solver generalised, which is now its own follow-up.
+6. **The CI example lists are derived, not typed.** A new example used to be half-wired until
+   someone noticed; `scripts/examples.py` prints them, and `--with-payload` prints the ones `emit`
+   accepts. A new example is now wired by existing.

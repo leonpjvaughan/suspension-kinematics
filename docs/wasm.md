@@ -266,6 +266,12 @@ otkd-0.1.0/
 The manifest says *why* a kernel is missing rather than leaving a hole, so a consumer sees the
 current limit instead of a broken path.
 
+**One free direction, for now.** The kernel's equilibrium path was written for the tie-rod corner:
+one compliance, one free direction, one linear solve. A model with a bush at the ball joint has
+three, and the emitter refuses it by name — "an equilibrium kernel expects one free direction; this
+model has 3" — rather than emitting a solver for the wrong equations.
+[`follow-ups.md`](follow-ups.md) has the item.
+
 ### `maths-site`: a step before the build
 
 ```yaml
