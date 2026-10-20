@@ -11,9 +11,14 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .. import __version__
+from ..analysis.outputs import Reference, compute, quantities
 from ..solvers.sweep import Sweep
+
+if TYPE_CHECKING:
+    from ..problem.compile import Problem
 
 LENGTH_DP = 6
 ANGLE_DP = 4
@@ -28,6 +33,16 @@ AGREEMENT_FIGURES = 1
 #: between machines in its last bits, so its digits are not the model's. Reporting it as zero is
 #: both honest and the only way the artefact can be byte-identical.
 RESIDUAL_FLOOR = 1e-9
+#: Decimal places per quantity: angles to four, lengths to six. One table, because a frame entry
+#: and a trajectory sample are the same numbers and must round the same way.
+QUANTITY_PLACES = {
+    "camber": ANGLE_DP,
+    "toe": ANGLE_DP,
+    "ic": LENGTH_DP,
+    "rc": LENGTH_DP,
+    "track": LENGTH_DP,
+    "contact": LENGTH_DP,
+}
 
 
 def _r(value: float, dp: int) -> float:
@@ -53,6 +68,20 @@ def _point(point, dp: int = LENGTH_DP) -> list[float]:
     return [_r(component, dp) for component in point]
 
 
+def _rounded(values: dict[str, object]) -> dict[str, object]:
+    """Round a quantity mapping to the places its unit deserves, keeping its keys and order."""
+    rounded: dict[str, object] = {}
+    for name, value in values.items():
+        places = QUANTITY_PLACES[name]
+        if value is None:
+            rounded[name] = None
+        elif isinstance(value, list):
+            rounded[name] = [_r(component, places) for component in value]
+        else:
+            rounded[name] = _r(float(value), places)
+    return rounded
+
+
 def payload(sweep: Sweep) -> dict:
     study = sweep.model.study
     travel_start = _r(study.drivers[0].law.grid()[0], LENGTH_DP) if study and study.drivers else 0.0
@@ -68,14 +97,9 @@ def payload(sweep: Sweep) -> dict:
             "wc": _xz(frame.points.get("wc")),
             "tro": _xz(frame.points.get("tro")),
             "points": {name: _point(value) for name, value in frame.points.items()},
-            "camber": _r(out.camber, ANGLE_DP),
-            "toe": _r(out.toe, ANGLE_DP),
-            "ic": None if out.ic is None else [_r(v, LENGTH_DP) for v in out.ic],
-            "rc": None if out.rc is None else [_r(v, LENGTH_DP) for v in out.rc],
-            "track": _r(out.track, LENGTH_DP),
-            "branchChanged": bool(frame.branch_changed),
-            "contact": [_r(v, LENGTH_DP) for v in out.contact],
         }
+        entry.update(_rounded(quantities(out)))
+        entry["branchChanged"] = bool(frame.branch_changed)
         frames.append(entry)
 
     representative = min(range(len(sweep.frames)), key=lambda i: abs(sweep.frames[i].values[sweep.primary]))
@@ -116,6 +140,37 @@ def payload(sweep: Sweep) -> dict:
 
 
 MAX_ITERATIONS = 60
+
+
+def sample(
+    problem: "Problem",
+    q,
+    reference: Reference,
+    *,
+    time: float,
+    energy: float,
+    constraint: float,
+) -> dict:
+    """One step of a trajectory, shaped exactly like a frame entry.
+
+    A trajectory has no driven value (`theta`) and no branch history that can change, so those
+    two sweep concepts are absent. Everything else is the same: the same quantity names, the same
+    rounding, the same world points, computed by the same code that fills a frame — so a page that
+    draws a sweep can draw a trajectory without a second reading of the model.
+    """
+    points = problem.world_points(q)
+    entry: dict = {
+        "t": _r(time, LENGTH_DP),
+        "energy": _r(energy, LENGTH_DP),
+        "constraint": float(constraint),
+        "lbj": _xz(points.get("lbj")),
+        "ubj": _xz(points.get("ubj")),
+        "wc": _xz(points.get("wc")),
+        "tro": _xz(points.get("tro")),
+        "points": {name: _point(value) for name, value in points.items()},
+    }
+    entry.update(_rounded(quantities(compute(problem, q, reference))))
+    return entry
 
 
 def _iterations(sweep: Sweep, index: int) -> list[dict]:

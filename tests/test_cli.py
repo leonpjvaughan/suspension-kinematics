@@ -104,6 +104,8 @@ def test_solve_a_dynamics_study(tmp_path):
     payload = json.loads(target.read_text())
     assert payload["meta"]["analysis"] == "dynamics"
     assert len(payload["trajectory"]) == 21
+    # A trajectory step is shaped like a sweep frame, so one reader draws both.
+    assert {"camber", "toe", "track", "contact", "points"} <= set(payload["trajectory"][0])
 
     refused = run("emit", str(root), str(tmp_path / "out.js"), "--quiet")
     assert refused.returncode == 1

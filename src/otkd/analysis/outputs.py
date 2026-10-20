@@ -131,6 +131,23 @@ def compute(problem: Problem, q: np.ndarray, reference: Reference) -> Outputs:
     )
 
 
+def quantities(outputs: Outputs) -> dict[str, object]:
+    """The output fields as a mapping, in the order a payload writes them.
+
+    One naming, one shape: a sweep frame and a trajectory sample are both a solved pose, so both
+    carry these keys. The emitters round from here, which is what stops a `solve --json`
+    trajectory and an `out.js` frame from disagreeing about the number or the name.
+    """
+    return {
+        "camber": float(outputs.camber),
+        "toe": float(outputs.toe),
+        "ic": None if outputs.ic is None else [float(outputs.ic[0]), float(outputs.ic[1])],
+        "rc": None if outputs.rc is None else [float(outputs.rc[0]), float(outputs.rc[1])],
+        "track": float(outputs.track),
+        "contact": [float(outputs.contact[0]), float(outputs.contact[1])],
+    }
+
+
 # -- pieces ----------------------------------------------------------------------------
 
 
