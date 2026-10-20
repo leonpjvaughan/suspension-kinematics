@@ -1,0 +1,21 @@
+# §1.5's question: how stiff must the bush at the upper ball joint be before the bushed corner is
+# the rigid one? One run answers it, because the axis is a geometry number and the drivers are
+# swept inside it.
+analysis: kinematics
+
+drivers:
+  - actuator: lca-drive
+    law: {kind: linear, from: -0.1, to: 0.1, steps: 41}
+
+# A corner carries load; a bush only deflects under one. Without these the bushed model would be
+# the rigid one at every stiffness.
+loads:
+  - {site: wc, force: [0, 0, -3500], law: {kind: constant}}
+  - {site: wc, force: [1800, 0, 0], law: {kind: constant}}
+
+# 0.2, 1, 10 and 100 MN/m. A table rather than a ramp: the stiffnesses are the round numbers, so
+# the compliances are not evenly spaced. Each value starts a fresh pass over the travel, seeded
+# from the design pose — a 5 MN/m bush and a 100 MN/m bush are different assemblies.
+axes:
+  - numbers: [compliance.uca-up.tx, compliance.uca-up.ty, compliance.uca-up.tz]
+    law: {kind: table, values: [5.0e-6, 1.0e-6, 1.0e-7, 1.0e-8]}

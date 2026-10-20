@@ -13,6 +13,7 @@ rotation matrix, so a future change of parametrisation stays local to this file.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Callable
@@ -270,6 +271,31 @@ class Problem:
             else:  # pragma: no cover
                 raise KeyError(key)
         return values
+
+    @property
+    def number_names(self) -> list[str]:
+        """Every geometry number, dotted, in the order `numbers()` returns them.
+
+        A number that stands alone drops the index it was allocated with — `compliance.tie-rod.length`
+        rather than `…length.0` — because that index is the compiler's bookkeeping, not the model's.
+        The three components of a point keep theirs: `point.lcaf.0` … `.2`.
+        """
+        counts = Counter(key[:-1] for key in self._gkey)
+        return [
+            ".".join(str(part) for part in (key[:-1] if counts[key[:-1]] == 1 else key))
+            for key in self._gkey
+        ]
+
+    def number_index(self, name: str) -> int:
+        """The index of a geometry number in `numbers()`, named as `compliance.uca-up.tx`.
+
+        Matched against `number_names` rather than by prefix: a study that names a number has to be
+        told when the number is not there, not handed the first one that starts the same way.
+        """
+        try:
+            return self.number_names.index(name)
+        except ValueError:
+            raise KeyError(name) from None
 
     def compliance(self, g: np.ndarray) -> dict[tuple[str, str], float]:
         out = {}

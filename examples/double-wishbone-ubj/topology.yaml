@@ -1,0 +1,35 @@
+id: dw-ubj
+constraints: ../constraints.yaml
+
+# §1's mechanism with the compliance moved to the upper ball joint: the tie rod is rigid again,
+# and the joint that holds the upright to the upper arm deflects in its three translations.
+# One joint's `modes:` changes; nothing else about the model does.
+bodies:
+  ground: {fixed: true, points: [lcaf, lcar, ucaf, ucar, tri]}
+  lca: {points: []}
+  uca: {points: []}
+  up: {points: [lbj, ubj, wc, wco, tro]}
+
+roles: {axle: [wc, wco]}
+
+sites:
+  lca-hinge: {origin: lcaf, z: lca-axis}
+  uca-hinge: {origin: ucaf, z: uca-axis}
+  lbj: {origin: lbj}
+  ubj: {origin: ubj}
+  tri: {origin: tri}
+  tro: {origin: tro}
+  wc: {origin: wc}
+
+joints:
+  - {name: lca-ground, kind: revolute, a: ground, b: lca, site: lca-hinge}
+  - {name: uca-ground, kind: revolute, a: ground, b: uca, site: uca-hinge}
+  - {name: lca-up, kind: spherical, a: lca, b: up, site: lbj}
+  # The three translations of a spherical joint are locked; here they are springs, which is a
+  # bush at the upper ball joint and not a different kind of joint.
+  - {name: uca-up, kind: spherical, a: uca, b: up, site: ubj,
+     modes: {tx: spring, ty: spring, tz: spring}}
+  - {name: tie-rod, kind: distance, a: ground, b: up, from: tri, to: tro}
+
+actuators:
+  - {name: lca-drive, joint: lca-ground, dof: rz, effort: position}
