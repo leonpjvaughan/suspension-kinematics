@@ -19,22 +19,38 @@ a `dynamics` study shape with a CLI path) are implemented and tested. Remaining,
 ## A compliant upper joint, and a stiffness axis
 
 Requested by `maths-site` ([`handoff-from-maths-site.md`](handoff-from-maths-site.md) §1) and
-accepted in the package's shape, not the book's. Two halves.
+accepted in the package's shape, not the book's. **Measured, and it is not the config change it
+looked like.**
 
-- **A compliant spherical joint** — most likely `uca-up` with its three translation components
-  springy — so a load path can run through the upper ball joint. `geometry.yaml` already has the
-  shape (`joints.<name>.compliance`); what is missing is a kind whose modes allow it, and an
-  example that uses it.
-- **A stiffness axis on the study**: a number iterated *outside* the travel driver, so one run
-  produces the ladder. `Sweep.frames` carries one `primary` axis today and `solvers/sweep.py` seeds
-  each frame from its predecessor; a second axis must seed each inner sweep from the design pose,
-  because a soft joint and a stiff joint are different branches.
+**A compliant spherical joint is already expressible, and does not yet solve.** No new kind is
+needed: a per-joint `modes:` override says `{tx: spring, ty: spring, tz: spring}` on `uca-up`, and
+`geometry.yaml` gives the three compliances. The model then classifies as `equilibrium` with three
+free directions and checks clean. What it does not do is converge:
 
-Done means: an example sweeps stiffness and its export reports camber at rest and over the travel
-for each value; the classifier and the kernel accept it, or refuse it for a reason about the
-mathematics rather than the plumbing; and a **measurement** shows camber responds to that
-compliance. If it does not, the answer is no — an approximation built from a compliant *distance*
-joint would give a ladder of the right shape and the wrong physics, which is worse than no ladder.
+| what was measured | result |
+|---|---|
+| compile, three compliant components at one frame joint | **63 s** before the gradient was assembled from the rows, ~1 s after (`decisions.md` round 22) |
+| equilibrium at k = 0.2, 1, 10, 100 MN/m | **fails at every one**, stopping on `xtol` with a residual of **0.056** — about 300 N of unbalanced force |
+| the same model at the design pose | hard rows exact (7e-18), so it is not a constraint problem |
+
+The residual is discontinuous, and the likely mechanism is the null-space sign anchoring: it
+anchors each basis column against a *spring row's* gradient, and three compliant rows at one joint
+have gradients that can be near-parallel, so the sign flickers and the trust region stops at a
+kink. Route: anchor against a direction carried over from the previous evaluation, or against the
+design pose, instead of against the spring rows.
+
+**A stiffness axis is a study change, not an example.** A number iterated *outside* the travel
+driver, so one run produces the ladder; each inner sweep seeded from the **design pose**, because a
+soft joint and a stiff joint are different branches and `solvers/sweep.py`'s predecessor seeding is
+for continuity within a sweep. `Sweep.frames` carries one `primary` value today. The classifier is
+unaffected (rank is a property of the model) and the kernel needs no ABI change — it already takes
+the compliance as a number slot.
+
+Done means: the equilibrium converges for a ball joint that is compliant in three components; an
+example sweeps stiffness and its export reports camber at rest and over the travel for each value;
+and a **measurement** shows camber responds to that compliance. If it does not, the answer is no —
+an approximation built from a compliant *distance* joint would give a ladder of the right shape and
+the wrong physics, which is worse than no ladder.
 
 ## The UI
 
