@@ -32,6 +32,8 @@ it.
 
 ## Done
 
+- **Loads are a run-time buffer**: a page sets a load's magnitude and the answer follows, measured
+  against Python at 1× and 2× the corner's load ([`decisions.md`](decisions.md) round 30).
 - **`default_geometry` in the manifest, and a `design()` that means it** — a page can set the model
   and change one number, and re-integrating no longer starts from the last run's pose
   ([`decisions.md`](decisions.md) round 29).

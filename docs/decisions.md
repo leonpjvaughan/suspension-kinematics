@@ -866,3 +866,25 @@ a control would do. Building it needed two things from the kernel, and the secon
 **0.05 MN/m → −326 mm, 0.1 → −213, 0.2 → −117, 0.5 → −49, 1 → −25, 2 → −13** of peak heave, every
 run with a constraint violation at `1e-15` and a repeat at the end reproducing the first. That
 monotone ladder is what the book's table shows.
+
+---
+
+## Round 30: loads are a run-time buffer (accepted, implemented)
+
+The book wanted a control on a *force*, not only on a stiffness. A load's **direction** is what a
+model says a load is — which body, which point, which axis — so it stays generated; its
+**magnitude** is a number a page may want to change, so it moved into a buffer: `ld`, three numbers
+per study load, written by `setLoads` and filled from the manifest by `setGeometry` so the default is
+the model. Additive again, so the ABI stays `otkd-kernel-2`.
+
+**Measured against Python**, a quarter car that carries the corner's load (3.5 kN down and 1.8 kN
+sideways at the wheel centre), 41 steps: the kernel's peak heave agrees with Python's to `8.7e-9` m
+at the study's own load and `1.2e-8` m at **twice** it, with the constraint at `1e-15` in both. That
+second run is the point: the load is a number the page sets, and the answer follows.
+
+**What this does not do yet: no shipped example carries a study load.** The quarter car's load is
+gravity, which is a property of the model rather than the study, so its kernel has no load slots at
+all and the book's table can sweep stiffness but not force. Giving it a load is a modelling change —
+the corner's own 3.5 kN and 1.8 kN — and that re-derives every number §1.6 quotes, from the 212.8 mm
+to the 0.006° agreement. That is the book's decision, not the package's, and it is recorded in
+`maths-site`'s queue rather than taken here.

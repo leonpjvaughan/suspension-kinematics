@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 import otkd
 from otkd.emitters.wasm import TARGET, emit_wasm
@@ -269,6 +270,101 @@ def test_the_kernel_trajectory_conserves_energy(dynamics_kernel):
     speeds = np.array(result["velocities"])
     energies = np.array([dynamics.energy(problem, q, v, None)[2] for q, v in zip(states, speeds)])
     assert np.max(np.abs(energies - energies[0])) / abs(energies[0]) < 1e-6
+
+
+LOADED_SCRIPT = """
+import { readFile, writeFile } from 'node:fs/promises';
+import kernel from './kernel.js';
+const ref = JSON.parse(await readFile('./reference.json'));
+await kernel.ready();
+const out = {};
+for (const [name, scale] of Object.entries(ref.loads)) {
+  kernel.setGeometry({ points: ref.points, axes: ref.axes, numbers: ref.numbers });
+  // The kernel starts from the model's own loads; this is the override a page would use.
+  const defaults = kernel.manifest.loads.map((load) => load.force).flat();
+  if (scale !== 1) kernel.setLoads(defaults.map((value) => value * scale));
+  kernel.design();
+  kernel.setVelocity(new Array(kernel.manifest.layout.sizes.q).fill(0));
+  const worst = kernel.integrate(ref.steps);
+  const heave = kernel.trajectory(ref.steps).map((q) => q[ref.start + 2]);
+  out[name] = { worst, peak: Math.min(...heave) };
+}
+await writeFile('./loaded.json', JSON.stringify(out));
+"""
+
+
+@pytest.fixture(scope="module")
+def loaded_kernel(tmp_path_factory):
+    """A corner that carries its own load, so the load slots are exercised.
+
+    The quarter car ships without one — gravity is its load — so the shipped examples never touch
+    the load buffer. This builds the same model with the corner's load in the study.
+    """
+    from otkd.problem import dynamics
+    from otkd.problem.compile import Problem
+
+    root = tmp_path_factory.mktemp("wasm-loaded")
+    model_root = build(root, "quarter-car", steps=41)
+    study = yaml.safe_load((model_root / "study.yaml").read_text())
+    study["loads"] = [
+        {"site": "wc", "force": [0, 0, -3500], "law": {"kind": "constant"}},
+        {"site": "wc", "force": [1800, 0, 0], "law": {"kind": "constant"}},
+    ]
+    (model_root / "study.yaml").write_text(yaml.safe_dump(study, sort_keys=False))
+    model = otkd.load(model_root)
+    problem = Problem(model)
+    out = root / "kernel"
+    written = emit_wasm(model, out)
+    if written["wasm"] is None:
+        pytest.skip(written["note"] or "no wasm toolchain")
+    if not _node_available():
+        pytest.skip("node is not installed: cannot run the module")
+    manifest = json.loads((out / "kernel.json").read_text())
+    assert len(manifest["loads"]) == 2
+    (out / "reference.json").write_text(
+        json.dumps(
+            {
+                "points": model.geometry.points,
+                "axes": model.geometry.axes,
+                "numbers": manifest["default_numbers"],
+                "steps": manifest["integration"]["steps"],
+                "start": problem._qstart["chassis"],
+                "loads": {"default": 1, "twice the corner load": 2},
+            }
+        )
+    )
+    (out / "run.mjs").write_text(LOADED_SCRIPT)
+    result = subprocess.run(["node", "run.mjs"], cwd=out, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        pytest.fail(f"node failed:\n{result.stdout}\n{result.stderr}")
+    return json.loads((out / "loaded.json").read_text()), problem, manifest
+
+
+@pytest.mark.parametrize("case,scale", [("default", 1.0), ("twice the corner load", 2.0)])
+def test_the_kernel_takes_its_loads_at_run_time(loaded_kernel, case, scale):
+    """A load's direction is the model's; its magnitude is a number a page sets."""
+    from otkd.problem import dynamics
+
+    results, problem, manifest = loaded_kernel
+    loads = [
+        (
+            problem.resolved.point_body[problem.topology.sites[load.site].origin],
+            problem.topology.sites[load.site].origin,
+            np.asarray(load.force, dtype=float) * scale,
+        )
+        for load in problem.model.study.loads
+    ]
+    trajectory = dynamics.integrate(
+        problem,
+        problem.q0(),
+        np.zeros(problem.n),
+        duration=manifest["integration"]["duration"],
+        steps=manifest["integration"]["steps"],
+        loads=loads,
+    )
+    heave = trajectory.q[:, problem._qstart["chassis"] + 2]
+    assert results[case]["worst"] < 1e-9
+    assert abs(results[case]["peak"] - heave.min()) < 1e-6
 
 
 @pytest.fixture(scope="module")
