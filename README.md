@@ -43,6 +43,8 @@ $ otkd compile examples/double-wishbone --format latex
 $ otkd solve examples/double-wishbone --json out.json
 $ otkd emit examples/double-wishbone out.js          # the static payload
 $ otkd emit examples/double-wishbone assets/kernel --format wasm  # a solver for a page
+$ otkd emit examples/quarter-car assets/quarter-car --format wasm  # an integrator, for a trajectory
+$ uv run python scripts/run_kernel.py examples/quarter-car         # run that kernel and print it
 $ otkd kinds examples/double-wishbone         # what your library means, component by component
 ```
 
