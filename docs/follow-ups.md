@@ -4,18 +4,7 @@ Work that has been agreed and deliberately not done yet. Each entry says what it
 deferred, and what would make it done — so picking one up does not require reconstructing the
 argument.
 
-## Compiled kernels: a dynamics model
-
-Every kinematic example now compiles, including the compliant and the bushed ones — square Newton,
-least squares, and the KKT equilibrium ([`decisions.md`](decisions.md) round 25). What has no
-kernel is a **dynamics** study: `emit --format wasm` refuses it by name, and the release manifest
-records `none (dynamics)` for the quarter car. A page that wants a trajectory in the browser needs
-a kernel that integrates, which is a different program from the three solvers that exist.
-
-Done means: `emit --format wasm` on `examples/quarter-car` writes a kernel whose trajectory agrees
-with Python's to `1e-9` over the study, the way the kinematic kernels agree on a pose.
-
-## Dynamics v2.3: four corners, and a load that arrives through the tyre
+## Dynamics v2.4: four corners, and a load that arrives through the tyre
 
 v2.0 (accelerations and reactions), v2.1 (time stepping, the energy test, the CLI path) and v2.2
 (`examples/quarter-car`: a heaving chassis, a coil-over, the tyre on a road plane) are implemented
@@ -43,6 +32,10 @@ it.
 
 ## Done
 
+- **The dynamics kernel**: `emit --format wasm` on a dynamics study writes an integrator — `M`, `C`,
+  the saddle-point acceleration, RK4 with projection — and `scripts/run_kernel.py` runs it. Agrees
+  with Python to `1.8e-8` on the poses and `5.4e-8` on the energy ([`decisions.md`](decisions.md)
+  round 28).
 - **The velocity products are per body**: `37.0 ms → 10.3 ms` per acceleration on the quarter car,
   with the same energy drift ([`decisions.md`](decisions.md) round 26).
 - **The kernel's equilibrium path** is the KKT system, so a bush at a ball joint compiles and agrees

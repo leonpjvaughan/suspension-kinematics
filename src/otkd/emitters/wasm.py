@@ -56,8 +56,7 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
     axes = sorted(model.geometry.axes)
     numbers = [key for key in problem._gkey if key[0] in ("length", "gap", "compliance")]
 
-    layout = Layout(
-        sizes={
+    sizes = {
             "q": problem.n,
             "g": len(problem.g),
             "t": len(problem.drives),
@@ -68,10 +67,15 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
             "pts": 3 * len(points),
             "axs": 3 * len(axes),
             "num": len(numbers),
-        },
-        offsets={},
-        total=0,
-    )
+    }
+    study = model.study
+    if kind == "dynamics":
+        assert study is not None and study.steps is not None
+        sizes["v"] = problem.n
+        sizes["acc"] = problem.n
+        sizes["traj"] = study.steps * problem.n
+        sizes["trajv"] = study.steps * problem.n
+    layout = Layout(sizes=sizes, offsets={}, total=0)
     offset = 0
     offsets = {}
     for key, size in layout.sizes.items():
@@ -101,6 +105,17 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
         "default_numbers": _default_numbers(problem, numbers),
         "rows": [{"name": row.name, "unit": row.unit, "group": row.group} for row in problem.rows],
         "drive": [drive.actuator for drive in problem.drives],
+        **(
+            {
+                "integration": {
+                    "duration": study.duration,
+                    "steps": study.steps,
+                    "dt": (study.duration or 0.0) / (study.steps - 1),
+                }
+            }
+            if kind == "dynamics"
+            else {}
+        ),
         "wasm": wasm_path.name if wasm_path else None,
         "note": note,
     }
@@ -125,10 +140,9 @@ def _supported_kind(problem: Problem) -> str:
     from ..solvers.system import System
 
     if problem.model.study is not None and problem.model.study.analysis == "dynamics":
-        raise ValueError(
-            "a dynamics study has no compiled solver: the kernel solves kinematics and equilibrium, "
-            "not a trajectory"
-        )
+        # A trajectory is a different program from the three pose solvers, and it is generated
+        # only for a study that asks for one: the buffers it needs are `steps × n` numbers.
+        return "dynamics"
     kind = System(problem, problem.numbers(), problem.theta0()).classify()
     if kind in ("square", "redundant", "equilibrium"):
         return kind
@@ -213,7 +227,10 @@ def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, n
         f"const P: usize = {len(points)};",
         "",
     ]
-    for key in ("q", "g", "t", "out", "jac", "met", "world", "pts", "axs", "num"):
+    offsets = ["q", "g", "t", "out", "jac", "met", "world", "pts", "axs", "num"]
+    if kind == "dynamics":
+        offsets += ["v", "acc", "traj", "trajv"]
+    for key in offsets:
         lines.append(f"const O_{key.upper()}: usize = {off[key]};")
     lines += [
         f"const TOTAL: usize = {layout.total};",
@@ -381,7 +398,12 @@ def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, n
         "}",
         "",
     ]
-    if kind == "square":
+    if kind == "dynamics":
+        # The pose solvers still matter — a page places the mechanism by driving it — and the
+        # integrator is generated on top of the same rows and Jacobian.
+        lines += _newton_solver()
+        lines += _dynamics_solver(problem, model)
+    elif kind == "square":
         lines += _newton_solver()
     elif kind == "redundant":
         lines += _least_squares_solver()
@@ -696,6 +718,499 @@ def _equilibrium_solver(problem: Problem, model: Model) -> list[str]:
     return lines
 
 
+
+def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
+    """RK4 with projection: the same equations the Python engine solves, as Rust.
+
+    `M q̈ + C = f − Φᵀλ` with `Φ q̈ = γ`, solved as one saddle-point system; `C` differentiated per
+    body, which is the form round 26 settled on. After every accepted step the state is projected
+    back onto `Φ = 0` and `Φ_q q̇ = 0`: RK4 drifts off a rigid link by `O(h⁴)` a step, and a
+    trajectory that leaves the mechanism is not a trajectory of the mechanism.
+
+    Two regularisations, both stated where they happen: the saddle system has a free direction (a
+    dynamics model is *supposed* to), and a left-null vector makes it singular, so the constraint
+    block gets `−εI`; and the projection solves `J Jᵀ dλ = −Φ`, which is singular for the same
+    reason, so it gets `+εI` scaled to the matrix.
+    """
+    dynamics = model.geometry.dynamics
+    if dynamics is None:
+        raise ValueError("a dynamics kernel needs a `dynamics:` block")
+    study = model.study
+    assert study is not None and study.duration is not None and study.steps is not None
+    n = problem.n
+    rows = [i for i, row in enumerate(problem.rows) if row.group != "spring"]
+    springs = [i for i, row in enumerate(problem.rows) if row.group == "spring"]
+    if not rows:
+        raise ValueError("a dynamics kernel needs at least one constrained row")
+
+    bodies = [body for body in problem.moving]
+    starts, masses, inertias, coms, dampings = [], [], [], [], []
+    compliance_slots = []
+    for body in bodies:
+        numbers = dynamics.bodies.get(body)
+        if numbers is None:
+            raise ValueError(f"body {body!r} has no mass, so the model has no dynamics")
+        starts.append(problem._qstart[body])
+        masses.append(float(numbers.mass))
+        inertia = [float(v) for v in numbers.inertia]
+        inertias.append(inertia)
+        com = problem.resolved.points[numbers.com] if isinstance(numbers.com, str) else numbers.com
+        coms.append([float(v) for v in com])
+    for index in springs:
+        joint, component = problem.rows[index].name.split(".", 1)
+        compliance_slots.append(problem._gkey.index(("compliance", joint, component, 0)))
+        dampings.append(float(model.geometry.joints[joint].damping.get(component, 0.0)) if joint in model.geometry.joints else 0.0)
+
+    loads = []
+    for load in study.loads:
+        if load.law.kind != "constant":
+            raise ValueError("the kernel takes constant loads only")
+        site = problem.topology.sites[load.site]
+        body = problem.resolved.point_body[site.origin]
+        loads.append((body, site.origin, [float(v) for v in load.force]))
+
+    gravity = [float(v) for v in dynamics.gravity]
+    mapping = _symbol_map(problem)
+
+    def jacobian_rows(body: str, point: str) -> list[str]:
+        p_, r_ = problem._pose[body]
+        expr = p_ + r_ * problem._point_sym[point]
+        jac = expr.jacobian(problem.q)
+        return [_rust(jac[k, j].xreplace(mapping)) for k in range(3) for j in range(n)]
+
+    def array(name: str, values: list[float], fmt: str = "{:.17e}") -> str:
+        return f"const {name}: [f64; {len(values)}] = [" + ", ".join(fmt.format(v) for v in values) + "];"
+
+    lines = [
+        "// ---- dynamics: M qddot + C = f - Phi^T lambda, with Phi qddot = gamma ----",
+        f"const NB: usize = {len(bodies)};",
+        f"const R: usize = {len(rows)};",
+        f"const S: usize = {len(springs)};",
+        "const K: usize = N + R;",
+        f"const DT: f64 = {study.duration / (study.steps - 1):.17e};",
+        f"const ALLOC: usize = {study.steps};",
+        "/// The saddle system's constraint block is regularised: a dynamics model has a free",
+        "/// direction, so the constraint rows have a left null vector and the system is singular.",
+        "const EPS: f64 = 1e-10;",
+        "",
+        "const BODY_START: [usize; NB] = [" + ", ".join(str(v) for v in starts) + "];",
+        array("BODY_MASS", masses),
+        "const BODY_INERTIA: [[f64; 6]; NB] = ["
+        + ", ".join("[" + ", ".join(f"{v:.17e}" for v in inertia) + "]" for inertia in inertias)
+        + "];",
+        "const BODY_COM: [[f64; 3]; NB] = ["
+        + ", ".join("[" + ", ".join(f"{v:.17e}" for v in com) + "]" for com in coms)
+        + "];",
+        "const GRAVITY: [f64; 3] = [" + ", ".join(f"{v:.17e}" for v in gravity) + "];",
+        "const CONSTRAINED: [usize; R] = [" + ", ".join(str(i) for i in rows) + "];",
+        "const SPRING_ROWS: [usize; S] = [" + ", ".join(str(i) for i in springs) + "];",
+        "const SPRING_G: [usize; S] = [" + ", ".join(str(i) for i in compliance_slots) + "];",
+        "const SPRING_DAMPING: [f64; S] = [" + ", ".join(f"{v:.17e}" for v in dampings) + "];",
+        "",
+        "#[inline]",
+        "fn dyn_maxabs(v: &[f64; N]) -> f64 {",
+        "    let mut worst = 0.0f64;",
+        "    for i in 0..N { let a = v[i].abs(); if a > worst { worst = a; } }",
+        "    worst",
+        "}",
+        "",
+        "/// `d(p + R o)/dq` for the seven pose parameters, at a body's centre of mass.",
+        "#[inline]",
+        "fn pjac(o: [f64; 3], w: f64, x: f64, y: f64, z: f64) -> [[f64; 7]; 3] {",
+        "    let v = [x, y, z];",
+        "    let mut j = [[0.0f64; 7]; 3];",
+        "    for k in 0..3 { j[k][k] = 1.0; }",
+        "    let c = cross3(v, o);",
+        "    for k in 0..3 { j[k][3] = 2.0 * (w * o[k] + c[k]); }",
+        "    let vo = dot3(v, o);",
+        "    for k in 0..3 {",
+        "        let mut axis = [0.0f64; 3];",
+        "        axis[k] = 1.0;",
+        "        let a = cross3(axis, o);",
+        "        for r in 0..3 {",
+        "            j[r][4 + k] = 2.0 * (-v[k] * o[r] + axis[r] * vo + v[r] * o[k] + w * a[r]);",
+        "        }",
+        "    }",
+        "    j",
+        "}",
+        "",
+        "/// `omega = W(q) qdot`: the world-frame angular velocity from the quaternion rate.",
+        "#[inline]",
+        "fn omega_map(w: f64, x: f64, y: f64, z: f64) -> [[f64; 4]; 3] {",
+        "    let mut m = [[0.0f64; 4]; 3];",
+        "    m[0] = [2.0 * -x, 2.0 * w, 2.0 * -z, 2.0 * y];",
+        "    m[1] = [2.0 * -y, 2.0 * z, 2.0 * w, 2.0 * -x];",
+        "    m[2] = [2.0 * -z, 2.0 * -y, 2.0 * x, 2.0 * w];",
+        "    m",
+        "}",
+        "",
+        "/// One body's 7x7 block of M.",
+        "#[inline]",
+        "fn body_block(b: usize, q: &[f64; N]) -> [[f64; 7]; 7] {",
+        "    let s = BODY_START[b];",
+        "    let (w, x, y, z) = (q[s + 3], q[s + 4], q[s + 5], q[s + 6]);",
+        "    let jv = pjac(BODY_COM[b], w, x, y, z);",
+        "    let om = omega_map(w, x, y, z);",
+        "    let i = BODY_INERTIA[b];",
+        "    let inertia = [[i[0], i[3], i[4]], [i[3], i[1], i[5]], [i[4], i[5], i[2]]];",
+        "    let mut out = [[0.0f64; 7]; 7];",
+        "    for r in 0..7 {",
+        "        for c in 0..7 {",
+        "            let mut acc = 0.0;",
+        "            for k in 0..3 { acc += jv[k][r] * jv[k][c]; }",
+        "            out[r][c] = BODY_MASS[b] * acc;",
+        "        }",
+        "    }",
+        "    for r in 3..7 {",
+        "        for c in 3..7 {",
+        "            let mut acc = 0.0;",
+        "            for k in 0..3 {",
+        "                for l in 0..3 { acc += om[k][r - 3] * inertia[k][l] * om[l][c - 3]; }",
+        "            }",
+        "            out[r][c] += acc;",
+        "        }",
+        "    }",
+        "    out",
+        "}",
+        "",
+        "#[inline]",
+        "fn kinetic_body(b: usize, q: &[f64; N], v: &[f64; N]) -> f64 {",
+        "    let s = BODY_START[b];",
+        "    let block = body_block(b, q);",
+        "    let mut sum = 0.0;",
+        "    for r in 0..7 {",
+        "        for c in 0..7 { sum += v[s + r] * block[r][c] * v[s + c]; }",
+        "    }",
+        "    0.5 * sum",
+        "}",
+        "",
+        "/// `C = Mdot qdot - d(half qdot^T M qdot)/dq`, per body, as round 26 measured in Python.",
+        "fn velocity_products(q: &[f64; N], v: &[f64; N], out: &mut [f64; N]) {",
+        "    let mut speed = 0.0;",
+        "    for i in 0..N { speed += v[i] * v[i]; }",
+        "    let speed = speed.sqrt();",
+        "    let step = if speed > 0.0 { 1e-7 / speed } else { 0.0 };",
+        "    for i in 0..N { out[i] = 0.0; }",
+        "    for b in 0..NB {",
+        "        let s = BODY_START[b];",
+        "        let mut grad = [0.0f64; 7];",
+        "        for j in 0..7 {",
+        "            let h = 1e-7 * (1.0 + q[s + j].abs());",
+        "            let mut qp = *q;",
+        "            let mut qm = *q;",
+        "            qp[s + j] += h;",
+        "            qm[s + j] -= h;",
+        "            grad[j] = (kinetic_body(b, &qp, v) - kinetic_body(b, &qm, v)) / (2.0 * h);",
+        "        }",
+        "        if step > 0.0 {",
+        "            let mut qp = *q;",
+        "            let mut qm = *q;",
+        "            for i in 0..N { qp[i] += step * v[i]; qm[i] -= step * v[i]; }",
+        "            let bp = body_block(b, &qp);",
+        "            let bm = body_block(b, &qm);",
+        "            for r in 0..7 {",
+        "                let mut fp = 0.0;",
+        "                let mut fm = 0.0;",
+        "                for c in 0..7 { fp += bp[r][c] * v[s + c]; fm += bm[r][c] * v[s + c]; }",
+        "                out[s + r] = (fp - fm) / (2.0 * step) - grad[r];",
+        "            }",
+        "        } else {",
+        "            for r in 0..7 { out[s + r] = -grad[r]; }",
+        "        }",
+        "    }",
+        "}",
+        "",
+        "/// Gravity, the study's loads, and the springs' and dampers' internal forces.",
+        "fn forces(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], out: &mut [f64; N]) {",
+        "    for i in 0..N { out[i] = 0.0; }",
+        "    for b in 0..NB {",
+        "        let s = BODY_START[b];",
+        "        let (w, x, y, z) = (q[s + 3], q[s + 4], q[s + 5], q[s + 6]);",
+        "        let jv = pjac(BODY_COM[b], w, x, y, z);",
+        "        for r in 0..7 {",
+        "            let mut acc = 0.0;",
+        "            for k in 0..3 { acc += jv[k][r] * BODY_MASS[b] * GRAVITY[k]; }",
+        "            out[s + r] += acc;",
+        "        }",
+        "    }",
+    ]
+    for body, point, force in loads:
+        values = jacobian_rows(body, point)
+        lines.append("    {")
+        lines.append("        let jx = [")
+        for k in range(3):
+            chunk = ", ".join(values[k * n : (k + 1) * n])
+            lines.append(f"            [{chunk}],")
+        lines.append("        ];")
+        for k in range(3):
+            if force[k]:
+                lines.append(
+                    f"        for j in 0..N {{ out[j] += jx[{k}][j] * {force[k]:.17e}; }}"
+                )
+        lines.append("    }")
+    lines += [
+        "    let mut values = [0.0f64; M];",
+        "    let mut jac = [0.0f64; N*M];",
+        "    compute_inner(q, g, t, &mut values, &mut jac);",
+        "    for s in 0..S {",
+        "        let row = SPRING_ROWS[s];",
+        "        let compliance = g[SPRING_G[s]];",
+        "        let tension = if compliance != 0.0 { values[row] / compliance } else { 0.0 };",
+        "        let mut rate = 0.0;",
+        "        for i in 0..N { rate += jac[row * N + i] * v[i]; }",
+        "        let force = tension + SPRING_DAMPING[s] * rate;",
+        "        for i in 0..N { out[i] -= force * jac[row * N + i]; }",
+        "    }",
+        "}",
+        "",
+        "/// `gamma = -d(Phi_q qdot)/dt`, at constant q.",
+        "fn gamma(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], out: &mut [f64; R]) {",
+        "    let mut speed = 0.0;",
+        "    for i in 0..N { speed += v[i] * v[i]; }",
+        "    let speed = speed.sqrt();",
+        "    if speed == 0.0 {",
+        "        for r in 0..R { out[r] = 0.0; }",
+        "        return;",
+        "    }",
+        "    let step = 1e-6 / speed;",
+        "    let mut qp = *q;",
+        "    let mut qm = *q;",
+        "    for i in 0..N { qp[i] += step * v[i]; qm[i] -= step * v[i]; }",
+        "    let mut values = [0.0f64; M];",
+        "    let mut jacp = [0.0f64; N*M];",
+        "    let mut jacm = [0.0f64; N*M];",
+        "    compute_inner(&qp, g, t, &mut values, &mut jacp);",
+        "    compute_inner(&qm, g, t, &mut values, &mut jacm);",
+        "    for r in 0..R {",
+        "        let row = CONSTRAINED[r];",
+        "        let mut acc = 0.0;",
+        "        for i in 0..N { acc += (jacp[row * N + i] - jacm[row * N + i]) / (2.0 * step) * v[i]; }",
+        "        out[r] = -acc;",
+        "    }",
+        "}",
+        "",
+        "/// One acceleration, by the saddle-point system.",
+        "fn accel(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], out: &mut [f64; N], lam: &mut [f64; R]) {",
+        "    let mut m = [0.0f64; N*N];",
+        "    for b in 0..NB {",
+        "        let block = body_block(b, q);",
+        "        let s = BODY_START[b];",
+        "        for r in 0..7 { for c in 0..7 { m[(s + r) * N + (s + c)] = block[r][c]; } }",
+        "    }",
+        "    let mut f = [0.0f64; N];",
+        "    forces(q, v, g, t, &mut f);",
+        "    let mut c = [0.0f64; N];",
+        "    velocity_products(q, v, &mut c);",
+        "    for i in 0..N { f[i] -= c[i]; }",
+        "    let mut values = [0.0f64; M];",
+        "    let mut jac = [0.0f64; N*M];",
+        "    compute_inner(q, g, t, &mut values, &mut jac);",
+        "    let mut gam = [0.0f64; R];",
+        "    gamma(q, v, g, t, &mut gam);",
+        "    let mut a = [0.0f64; K*K];",
+        "    for i in 0..N { for j in 0..N { a[i * K + j] = m[i * N + j]; } }",
+        "    for r in 0..R {",
+        "        let row = CONSTRAINED[r];",
+        "        for j in 0..N {",
+        "            let value = jac[row * N + j];",
+        "            a[j * K + (N + r)] = value;",
+        "            a[(N + r) * K + j] = value;",
+        "        }",
+        "        a[(N + r) * K + (N + r)] = -EPS;",
+        "    }",
+        "    let mut rhs = [0.0f64; K];",
+        "    for i in 0..N { rhs[i] = f[i]; }",
+        "    for r in 0..R { rhs[N + r] = gam[r]; }",
+        "    if !solve_linear(K, &mut a, &mut rhs) {",
+        "        for i in 0..N { out[i] = f64::NAN; }",
+        "        for r in 0..R { lam[r] = f64::NAN; }",
+        "        return;",
+        "    }",
+        "    for i in 0..N { out[i] = rhs[i]; }",
+        "    for r in 0..R { lam[r] = rhs[N + r]; }",
+        "}",
+        "",
+        "/// Put the state back on the manifold, by the smallest correction that does it.",
+        "fn project(q: &mut [f64; N], v: &mut [f64; N], g: &[f64; G], t: &[f64; A], out: &mut [f64; N]) {",
+        "    for _ in 0..4 {",
+        "        let mut values = [0.0f64; M];",
+        "        let mut jac = [0.0f64; N*M];",
+        "        compute_inner(q, g, t, &mut values, &mut jac);",
+        "        let mut worst = 0.0f64;",
+        "        for r in 0..R { let a = values[CONSTRAINED[r]].abs(); if a > worst { worst = a; } }",
+        "        if worst < 1e-13 { break; }",
+        "        let mut gram = [0.0f64; R*R];",
+        "        let mut rhs = [0.0f64; R];",
+        "        let mut scale = 0.0f64;",
+        "        for r in 0..R {",
+        "            for c in 0..R {",
+        "                let mut acc = 0.0;",
+        "                for i in 0..N { acc += jac[CONSTRAINED[r] * N + i] * jac[CONSTRAINED[c] * N + i]; }",
+        "                gram[r * R + c] = acc;",
+        "                if acc > scale { scale = acc; }",
+        "            }",
+        "            rhs[r] = -values[CONSTRAINED[r]];",
+        "        }",
+        "        let eps = 1e-12 * scale;",
+        "        for r in 0..R { gram[r * R + r] += eps; }",
+        "        if !solve_linear(R, &mut gram, &mut rhs) { break; }",
+        "        for i in 0..N {",
+        "            let mut step = 0.0;",
+        "            for r in 0..R { step += jac[CONSTRAINED[r] * N + i] * rhs[r]; }",
+        "            q[i] += step;",
+        "        }",
+        "    }",
+        "    for _ in 0..2 {",
+        "        let mut values = [0.0f64; M];",
+        "        let mut jac = [0.0f64; N*M];",
+        "        compute_inner(q, g, t, &mut values, &mut jac);",
+        "        let mut drift = [0.0f64; R];",
+        "        let mut worst = 0.0f64;",
+        "        for r in 0..R {",
+        "            let mut acc = 0.0;",
+        "            for i in 0..N { acc += jac[CONSTRAINED[r] * N + i] * v[i]; }",
+        "            drift[r] = acc;",
+        "            if acc.abs() > worst { worst = acc.abs(); }",
+        "        }",
+        "        if worst < 1e-13 { break; }",
+        "        let mut gram = [0.0f64; R*R];",
+        "        let mut rhs = [0.0f64; R];",
+        "        let mut scale = 0.0f64;",
+        "        for r in 0..R {",
+        "            for c in 0..R {",
+        "                let mut acc = 0.0;",
+        "                for i in 0..N { acc += jac[CONSTRAINED[r] * N + i] * jac[CONSTRAINED[c] * N + i]; }",
+        "                gram[r * R + c] = acc;",
+        "                if acc > scale { scale = acc; }",
+        "            }",
+        "            rhs[r] = -drift[r];",
+        "        }",
+        "        let eps = 1e-12 * scale;",
+        "        for r in 0..R { gram[r * R + r] += eps; }",
+        "        if !solve_linear(R, &mut gram, &mut rhs) { break; }",
+        "        for i in 0..N {",
+        "            let mut step = 0.0;",
+        "            for r in 0..R { step += jac[CONSTRAINED[r] * N + i] * rhs[r]; }",
+        "            v[i] += step;",
+        "        }",
+        "    }",
+        "    for i in 0..N { out[i] = q[i]; }",
+        "}",
+        "",
+        "/// Renormalise every quaternion: a linear combination of unit quaternions is not one, and",
+        "/// the RK4 stages are linear combinations.",
+        "#[inline]",
+        "fn gauge(q: &mut [f64; N]) {",
+        "    for b in 0..NB {",
+        "        let s = BODY_START[b] + 3;",
+        "        let mut norm = 0.0;",
+        "        for k in 0..4 { norm += q[s + k] * q[s + k]; }",
+        "        let norm = norm.sqrt();",
+        "        if norm != 0.0 { for k in 0..4 { q[s + k] /= norm; } }",
+        "    }",
+        "}",
+        "",
+        "fn derivative(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], dq: &mut [f64; N], dv: &mut [f64; N]) {",
+        "    let mut stage = *q;",
+        "    gauge(&mut stage);",
+        "    let mut lam = [0.0f64; R];",
+        "    accel(&stage, v, g, t, dv, &mut lam);",
+        "    for i in 0..N { dq[i] = v[i]; }",
+        "}",
+        "",
+        "/// The acceleration at the current state. Returns its largest component.",
+        "#[no_mangle]",
+        'pub extern "C" fn accelerations() -> f64 {',
+        "    let mut q = [0.0f64; N];",
+        "    let mut v = [0.0f64; N];",
+        "    let mut g = [0.0f64; G];",
+        "    let mut t = [0.0f64; A];",
+        "    unsafe {",
+        "        for i in 0..N { q[i] = MEM[O_Q + i]; }",
+        "        for i in 0..N { v[i] = MEM[O_V + i]; }",
+        "        for i in 0..G { g[i] = MEM[O_G + i]; }",
+        "        for i in 0..A { t[i] = MEM[O_T + i]; }",
+        "    }",
+        "    let mut out = [0.0f64; N];",
+        "    let mut lam = [0.0f64; R];",
+        "    accel(&q, &v, &g, &t, &mut out, &mut lam);",
+        "    unsafe { for i in 0..N { MEM[O_ACC + i] = out[i]; } }",
+        "    dyn_maxabs(&out)",
+        "}",
+        "",
+        "/// Integrate from the current state: RK4 with a projection after every step.",
+        "/// Returns the worst constraint violation seen, or -1 if the state left the numbers.",
+        "#[no_mangle]",
+        'pub extern "C" fn integrate(steps: i32) -> f64 {',
+        "    let steps = if steps as usize > ALLOC { ALLOC } else { steps as usize };",
+        "    if steps < 2 { return -1.0; }",
+        "    let mut q = [0.0f64; N];",
+        "    let mut v = [0.0f64; N];",
+        "    let mut g = [0.0f64; G];",
+        "    let mut t = [0.0f64; A];",
+        "    unsafe {",
+        "        for i in 0..N { q[i] = MEM[O_Q + i]; }",
+        "        for i in 0..N { v[i] = MEM[O_V + i]; }",
+        "        for i in 0..G { g[i] = MEM[O_G + i]; }",
+        "        for i in 0..A { t[i] = MEM[O_T + i]; }",
+        "    }",
+        "    gauge(&mut q);",
+        "    let mut worst = 0.0f64;",
+        "    for step in 0..steps {",
+        "        if step > 0 {",
+        "            let mut k1q = [0.0f64; N];",
+        "            let mut k1v = [0.0f64; N];",
+        "            derivative(&q, &v, &g, &t, &mut k1q, &mut k1v);",
+        "            let mut q2 = q;",
+        "            let mut v2 = v;",
+        "            for i in 0..N { q2[i] += 0.5 * DT * k1q[i]; v2[i] += 0.5 * DT * k1v[i]; }",
+        "            let mut k2q = [0.0f64; N];",
+        "            let mut k2v = [0.0f64; N];",
+        "            derivative(&q2, &v2, &g, &t, &mut k2q, &mut k2v);",
+        "            let mut q3 = q;",
+        "            let mut v3 = v;",
+        "            for i in 0..N { q3[i] += 0.5 * DT * k2q[i]; v3[i] += 0.5 * DT * k2v[i]; }",
+        "            let mut k3q = [0.0f64; N];",
+        "            let mut k3v = [0.0f64; N];",
+        "            derivative(&q3, &v3, &g, &t, &mut k3q, &mut k3v);",
+        "            let mut q4 = q;",
+        "            let mut v4 = v;",
+        "            for i in 0..N { q4[i] += DT * k3q[i]; v4[i] += DT * k3v[i]; }",
+        "            let mut k4q = [0.0f64; N];",
+        "            let mut k4v = [0.0f64; N];",
+        "            derivative(&q4, &v4, &g, &t, &mut k4q, &mut k4v);",
+        "            for i in 0..N {",
+        "                q[i] += DT / 6.0 * (k1q[i] + 2.0 * k2q[i] + 2.0 * k3q[i] + k4q[i]);",
+        "                v[i] += DT / 6.0 * (k1v[i] + 2.0 * k2v[i] + 2.0 * k3v[i] + k4v[i]);",
+        "            }",
+        "            let mut scratch = [0.0f64; N];",
+        "            project(&mut q, &mut v, &g, &t, &mut scratch);",
+        "            gauge(&mut q);",
+        "        }",
+        "        let mut values = [0.0f64; M];",
+        "        let mut jac = [0.0f64; N*M];",
+        "        compute_inner(&q, &g, &t, &mut values, &mut jac);",
+        "        for r in 0..R {",
+        "            let a = values[CONSTRAINED[r]].abs();",
+        "            if a > worst { worst = a; }",
+        "        }",
+        "        unsafe {",
+        "            for i in 0..N {",
+        "                MEM[O_TRAJ + step * N + i] = q[i];",
+        "                MEM[O_TRAJV + step * N + i] = v[i];",
+        "            }",
+        "        }",
+        "    }",
+        "    unsafe {",
+        "        for i in 0..N { MEM[O_Q + i] = q[i]; }",
+        "        for i in 0..N { MEM[O_V + i] = v[i]; }",
+        "    }",
+        "    worst",
+        "}",
+        "",
+    ]
+    return lines
+
 def _metrics_block(problem: Problem, model: Model) -> list[str]:
     """The quantities a figure draws, computed in the kernel from the same construction Python uses.
 
@@ -962,8 +1477,65 @@ def _build(target: Path) -> tuple[Path | None, str]:
     return target / "kernel.wasm", ""
 
 
+DYNAMICS_GLUE = """
+/** Set the velocity state, one number per pose unknown. */
+export function setVelocity(values) {
+  const mem = memory();
+  values.forEach((value, i) => { mem[at('v') + i] = value; });
+}
+
+/** The velocity state. */
+export function velocity() {
+  return Array.from(memory().subarray(at('v'), at('v') + S.q));
+}
+
+/** The acceleration at the current state, and its largest component. */
+export function accelerations() {
+  const residual = instance.exports.accelerations();
+  return { residual, acceleration: Array.from(memory().subarray(at('acc'), at('acc') + S.q)) };
+}
+
+/** Integrate from the current state. Returns the worst constraint violation. */
+export function integrate(steps) {
+  return instance.exports.integrate(steps ?? manifest.integration.steps);
+}
+
+/** The poses the last integration wrote, one per step. */
+export function trajectory(steps) {
+  const mem = memory();
+  const count = steps ?? manifest.integration.steps;
+  const out = [];
+  for (let k = 0; k < count; k += 1) {
+    out.push(Array.from(mem.subarray(at('traj') + k * S.q, at('traj') + (k + 1) * S.q)));
+  }
+  return out;
+}
+
+/** The velocities the last integration wrote, one per step. */
+export function velocities(steps) {
+  const mem = memory();
+  const count = steps ?? manifest.integration.steps;
+  const out = [];
+  for (let k = 0; k < count; k += 1) {
+    out.push(Array.from(mem.subarray(at('trajv') + k * S.q, at('trajv') + (k + 1) * S.q)));
+  }
+  return out;
+}
+
+"""
+
+
 def _js_glue(manifest: dict, module_b64: str) -> str:
     layout = manifest["layout"]
+    # The dynamics helpers read buffers only a dynamics kernel has, so they are emitted only for
+    # one: a kinematic module asked for `at('v')` would read someone else's memory.
+    dynamics = manifest.get("solver") == "dynamics"
+    dynamics_glue = DYNAMICS_GLUE if dynamics else ""
+    dynamics_api = (
+        "  setVelocity, velocity, accelerations, integrate, trajectory, velocities,\n"
+        if dynamics
+        else ""
+    )
     return f"""// Generated by otkd. Do not edit by hand.
 // model: {manifest['model']}
 //
@@ -1092,8 +1664,8 @@ export async function frame(geometry, drive) {{
   return {{ status, residual, q: pose(), points: world(), metrics: metrics() }};
 }}
 
-const api = {{
+{dynamics_glue}const api = {{
   manifest, ready, design, setGeometry, setDrive, solve, pose, evaluate, metrics, world, frame,
-}};
+{dynamics_api}}};
 export default api;
 """

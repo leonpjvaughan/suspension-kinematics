@@ -1,67 +1,42 @@
 # Handoff from `maths-site`: what the book cannot say yet
 
-> **Answered here.** Request 2 is met in **0.5.0**: `solve --json` writes, per step, the fields a
-> sweep frame carries (`camber`, `toe`, `ic`, `rc`, `track`, `contact`, the world points) beside
-> `t`, `energy` and `constraint`; and every model in the bundle now carries `source/` and a
-> `sources` digest map — dynamics included, which is the half that was a correctness question
-> (`bundle: otkd-bundle-2`). Request 1 is accepted as
-> [`follow-ups.md`](follow-ups.md)'s "A compliant upper joint, and a stiffness axis", in the
-> package's shape: a number iterated outside the travel driver, each inner sweep seeded from the
-> design pose, and the ladder gated on a measurement that camber responds.
+> **Answered, 2026-10-21, against `otkd` 0.7.0.**
 >
-> **The ladder exists.** `examples/double-wishbone-ubj` is the mechanism with the compliance moved
-> to the upper ball joint, and its study sweeps 0.2, 1, 10 and 100 MN/m in one run — 164 frames,
-> with `sweep.axes` naming the three numbers that moved and every frame carrying its stiffness.
-> Camber over the travel: **2.0828°, 2.0397°, 2.0291°, 2.0280°**, converging to the rigid answer.
-> One caveat for a page: the compiled kernel refuses that model ("an equilibrium kernel expects one
-> free direction; this model has 3"), so an *interactive* ladder needs the kernel work in
-> [`follow-ups.md`](follow-ups.md); the export is static for now.
+> **Request 2 — a step shaped like a frame, and a witnessed model.** Met in 0.5.0: `solve --json`
+> writes, per step, the fields a sweep frame carries (`camber`, `toe`, `ic`, `rc`, `track`,
+> `contact`, the world points) beside `t`, `energy` and `constraint`, and every model in the bundle
+> carries `source/` with a `sources` digest map (`bundle: otkd-bundle-2`). A compliant frame also
+> reports its `springs` deflection, and `solve --json` carries the solve's `trace`, which a committed
+> artefact cannot: the path of a stiff equilibrium solve is not reproducible between machines, so a
+> payload reports one converged iterate with the singular values of the solution's own Jacobian.
 >
-> **§1.5's ladder needs one decision before it can be regenerated, and this note first got the
-> reason wrong twice.** The example's own ladder, in the export's conventions (camber positive with
-> the top of the wheel outboard; travel from the loaded rest pose), over ±40 mm:
-> **0.2 MN/m: 6.14 mm of bush, rest −1.91°, change 1.96°; 1: 1.22 mm, −1.18°, 1.92°; 10: 0.12 mm,
-> −1.02°, 1.91°; 100: 0.012 mm, −1.00°, 1.91°** — the page's `CAMBER0 = −1.0°` is the datum, so
-> those are directly comparable with its `−2.05 …` column.
+> **Request 1 — a compliant upper joint and a stiffness ladder.** Met in 0.6.0 and 0.7.0.
+> `examples/double-wishbone-ubj` moves the compliance to the ball joint and sweeps 0.2, 1, 10 and
+> 100 MN/m in one run of 164 frames: `sweep.axes` names the three numbers that moved and every frame
+> carries its stiffness. Its ladder, in the export's conventions (camber positive outboard, travel
+> from the loaded rest): **6.14, 1.21, 0.12, 0.012 mm** of bush and **−1.91°, −1.18°, −1.02°,
+> −1.00°** at rest. The compiled kernel now solves it — the equilibrium path became the KKT system —
+> so an interactive ladder is a page decision rather than an engine limit.
 >
-> Those numbers agree with the page's table to about ten per cent, and **that agreement is a
-> coincidence of load cases**. On the same load — the page's 3 kN lateral at the contact patch — the
-> two models differ by a factor of **2.7**: the export's bush moves 2.51 mm at 0.2 MN/m where the
-> page's moves 6.8 mm. The reason is structural and worth teaching: the page's model is a
-> front-view idealisation with no fore-aft structure, while the three-dimensional mechanism shares
-> the load through its tie rod and its spherical lower joint. Softening the tie rod does *not*
-> reproduce the front view — a rigid constraint removes a direction rather than adding a spring.
+> **The two ladders, resolved.** The page's model and the example now carry one experiment: 1.8 kN
+> sideways and 3.5 kN downwards at the wheel centre. They agree to **0.04°**. Two earlier readings in
+> this note are withdrawn: the gap was a substitution of a different load case, and then a sign error
+> in the vertical term. `maths-site`'s item 83 is closed with the numbers.
 >
-> So a table generated from the export would change the *experiment*, not just the numbers. The
-> recommendation for the page: drive its figure from the vendored
-> `double-wishbone-ubj/kernel/kernel.js` — the kernel takes the bush's compliance as a run-time
-> number slot, which is the pattern the rigid `kernel-camber.js` already uses — so the figure, the
-> table and the engine are one model and one load case, and the front view becomes the idealisation
-> whose cost (2.7×) the section can measure.
+> **Request 3 — the SVD diagnosis in `out.js`.** Dropped for want of an owner: nothing in the book's
+> queue asked for it, `otkd check` prints the diagnosis, and a payload field with no reader is a
+> wish. It can return with an item.
 >
-> **And one contract change to know about.** A payload for a model with springs now reports a
-> single converged `iterations[]` entry instead of a descent. The path of a stiff equilibrium solve
-> is not reproducible between two machines — the frames were byte-identical while the first
-> iterate's residual differed by a factor of two — and a committed artefact has to be reproducible.
-> The entry carries the residual (floored, because below the solver's tolerance it is the
-> arithmetic's number) and the singular values of the solution's own Jacobian, which is the part
-> worth reading. Kinematic payloads keep their full descent.
->
-> **That measurement has
-> now been made, and it is a yes**: the equilibrium was the wall — a joint compliant in three
-> components would not converge in the projected formulation — and solving the saddle point
-> directly fixed it. Camber responds to the ball joint's compliance monotonically (2.0828° of travel
-> at 0.2 MN/m down to 2.0280° at 100 MN/m), so the ladder is real. What remains before your §1.5
-> can be generated is the export shape: an example with that joint, and a stiffness axis so that one
-> run yields the ladder. [`follow-ups.md`](follow-ups.md) has the numbers. Request 3 is dropped for
-> want of an owner in the book's queue; it can return with an item. The acceptance is the package's
-> numbers, not the page's rounding — where they disagree, the page changes.
+> **Governance.** The package's own numbers are the source, not the page's rounding; where they
+> disagree, the page changes. A package tuned to a figure cannot then be evidence for it.
 
 **From:** `open-textbook.org` (`maths-site`), which vendors your bundle
-**At:** `otkd` 0.4.0 (commit `f5d2c92`), 2026-10-19
+**At:** `otkd` 0.4.0 (commit `f5d2c92`), 2026-10-19, when it was written; **answered against 0.7.0**
+on 2026-10-21 — see the box above, which is the current state of every request below.
 **Status:** requests, with the measurements that justify each. Nothing here is a bug report
 unless it says so.
-**Refreshed:** 2026-10-19, from the book's own queue (`.agents/todo.md`), which now names the
+**Refreshed:** 2026-10-19, and again on 2026-10-21 after the library's last two readings of the
+§1.5 gap were withdrawn. The history is from the book's own queue (`.agents/todo.md`), which now names the
 package as the blocker on two numbered items — 83 (the stiffness ladder) and 85 (the quarter-car
 numbers). Those two are §1 and §2 below; the rest is unchanged.
 
@@ -198,6 +173,49 @@ that number so the book and the payload agree, and the page now states the groun
 explicitly. The book's figure and the payload therefore part company nowhere. If 0.200 was a
 placeholder and 0.320 was intended, tell us and we will follow the release that changes it — but
 the two repositories should not disagree about where the ground is.
+
+## What is already one source, figure by figure
+
+Audited 2026-10-21 across the book's six Chapter 1 figures, asking whether the vendored kernels and
+payloads can replace the book's own JavaScript solvers so that a number on a page has one origin.
+
+| figure | where its numbers come from |
+|---|---|
+| `kernel-camber` | the vendored **rigid kernel** — the engine, solved in the browser |
+| `quarter-car` | the vendored **trajectory**, written by a committed extraction script and digest-checked against the bundle |
+| `stiffness-agreement` | the page's **own** two-dimensional equilibrium model |
+| `solver-loop` | the page's **own** leg algebra and least squares — it *is* §1.4's lesson |
+| `wishbone-hero` | the page's **own** front view — it *is* §1.2's model |
+| `wishbone-3d`, `wishbone-anatomy` | geometry only; no solver |
+
+Every figure that displays an **engine result** already reads the bundle; the three that compute for
+themselves are the three that teach a model. That split is deliberate: §1.2's evidence is that the
+front view agrees with the kernel to 0.033°, which needs both to exist. The unification is complete
+where it is possible and impossible where it is not.
+
+**The one engine capability the book does not use is dynamics.** Its §1.6 trajectory is vendored
+engine *output*, not a solver on the page, so a dynamics kernel would add a live capability rather
+than remove a duplicate. That is why it waits for a page that re-integrates.
+
+## Solver findings the book could teach
+
+Not requests. This package's `AGENTS.md` asks for findings to be handed over as *teaching material*,
+and these are the ones that share a **tell** — a measurement that separates two explanations, which
+is what a reader can reproduce. Each is recorded in full in [`decisions.md`](decisions.md); the
+chapter decides how to teach it.
+
+| finding | the tell | where |
+|---|---|---|
+| A dynamics model needs the velocity-product term `C = Ṁq̇ − ∂(½q̇ᵀMq̇)/∂q` | the energy error **did not shrink** when the step was quartered — 2.8e-3 at 101 steps and the same at 401. Truncation error scales with the step; a missing term does not | `decisions.md` 19 |
+| `M q̈ = f` is only right when `M` is constant | with `C`, the drift is 3.6e-8 at 101 steps and 1.3e-10 at 401: it converges, which is what a correct force field looks like | [`dynamics.md`](dynamics.md) §4 |
+| A projected equilibrium (`Zᵀ∇Π = 0`) breaks when several compliant components share one joint | the residual was **unchanged** when the load changed by three orders of magnitude, which no force balance can do — the SVD basis rotates with `q`, so the finite-differenced residual is noise | `decisions.md` 23 |
+| Solving the saddle point in `(q, λ)` needs no basis at all | the same model converges at every stiffness, and `λ` comes out as the reaction in every constrained row | `decisions.md` 23 |
+| A symbolic gradient is a new expression per compliant component | three components at one joint took **63 s** to compile and then never returned from the gradient; assembled from the row Jacobian it is about a second | `decisions.md` 22 |
+| A unit quaternion, not a rotation vector | the exponential map's derivative is `0/0` at the design position, which is where a design study starts | `decisions.md` |
+| A compliant model is a different problem family, not a stiff one | the truncated analytic Jacobian stalled at **197** residual evaluations; the numerical one converges in **8** | [`solvers/equilibrium.py`](../src/otkd/solvers/equilibrium.py) |
+| An emitted artefact has to be reproducible on another machine | the frames were byte-identical and the iteration trace was not: a different LAPACK moves a seed's last bits, and a stiff model amplifies them | `decisions.md` 23 |
+| A stiffness ladder is one run, not four | an axis sweeps *geometry numbers* outside the drivers, each value starting a fresh pass from the design pose — a soft joint and a stiff joint are different assemblies | `decisions.md` 24 |
+| Two models compared under different loads is not a comparison | the same two mechanisms looked 2.7× apart until the load case matched, then agreed to 0.04° | this note, and the book's item 83 |
 
 ## What we are **not** asking for
 

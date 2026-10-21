@@ -762,3 +762,82 @@ sixteen local evaluations each. Measured on the quarter-car state: **37.0 ms →
 acceleration, and the two agree to `2.4e-6` on a scale of `6509` (the finite-difference noise). The
 energy test is unchanged: drift `3.6e-8` at 101 steps and `1.3e-10` at 401, which is the check that
 the term is still the right term.
+
+---
+
+## Round 27: what a dynamics kernel would have to be (accepted as a design, not built)
+
+A page can already animate a trajectory — the book vendors one and plots it. What a *kernel* adds is
+a reader changing something and seeing the answer, so the question is not "can it be compiled" but
+"what would it cost, and what is it for". This round fixes the design; nothing here is built.
+
+**What it needs that the kinematic kernels do not have.**
+
+1. **`M(q)`, per body.** The same Jacobians the constraint rows use, plus the angular-velocity map
+   and the inertia tensor. No new symbolics: `mass_matrix` in Python already builds a body's block
+   from a 3×7 point Jacobian, and that is exactly what the emitter generates.
+2. **`C(q, q̇)`, per body, by finite differences.** Sixteen local Jacobian evaluations per body per
+   acceleration, on the pattern [`decisions.md`](decisions.md) round 26 settled in Python. Measured
+   there at 10.3 ms per acceleration for the quarter car in Python; a browser pays it four times per
+   RK4 step, so a 0.5 s trajectory at 100 steps is a second or two — fine for a button, not for a
+   slider that re-integrates while it moves.
+3. **A projection step.** After each step, `Φ = 0` and `Φ_q q̇ = 0`, by one linear solve each — the
+   same `solve_linear` the equilibrium kernel already has.
+4. **A trajectory buffer, which means a new ABI.** The current layout has one pose slot. A
+   trajectory is `steps × n` numbers, so this is `otkd-kernel-3` with a second buffer and an
+   `integrate(steps)` export, and the manifest's per-model `solver` gains `"dynamics"`. A bundle
+   that ships it must say so, and a page must be able to tell one ABI from the other.
+
+**What it would be checked against.** Python's own integration, on the poses at a few steps and on
+the *behaviour* rather than the bits: the energy drift must fall with the step, which is the check
+that caught the missing velocity-product term in the first place. A trajectory is not reproducible
+between machines and must never be a committed artefact — the same rule that made a compliant
+payload report one converged iterate instead of its path.
+
+**Why it is not being built now.** Nothing is blocked on it. The book's §1.6 plots a vendored
+trajectory, which is data and needs no kernel; the kernel's value appears when a reader wants to
+change a parameter — a damper, a mass, a stiffness — and see the motion, which is a page design
+before it is an engine one. The condition for starting is that page: a figure whose slider must
+re-integrate, with the study it would drive.
+
+**What is deliberately not in it.** No stiff-integrator machinery (an implicit step, a
+symmetric/symplectic scheme). RK4 with projection is what the package does and what its tests
+measure; a browser that needs a stiff coil should be given a damper, not a different integrator.
+
+---
+
+## Round 28: the dynamics kernel (accepted, implemented)
+
+Round 27 designed it and said it would need `otkd-kernel-3`. It does not, and that is the first
+decision worth recording: the trajectory buffers are **added** after the existing ones, so every
+offset a kinematic page reads is unchanged, nothing in the four kinematic modules moves, and the ABI
+string can stay `otkd-kernel-2`. What a consumer needs to know is not a new number but a new fact —
+`solver: "dynamics"` — and that is in the manifest.
+
+What the generated Rust does, and why each piece is where it is:
+
+1. **`M` per body** from the same analytic point Jacobian the constraint rows use, the quaternion's
+   `ω` map, and the model's inertia tensors as constants. No new symbolics.
+2. **`C` per body**, sixteen local block evaluations each, exactly the form round 26 settled.
+3. **The acceleration** as the saddle-point system `[[M, Φᵀ],[Φ,0]][q̈;λ] = [f;γ]`, with two
+   regularisations stated where they happen: the constraint block gets `−εI` because a dynamics model
+   *has* a free direction and its constraint rows a left null vector, so the system is otherwise
+   singular; and the projection's `J Jᵀ dλ = −Φ` gets `+εI` scaled to its own diagonal, for the same
+   reason.
+4. **RK4 with a projection after every step** and the gauge renormalised before each stage — the
+   linear combinations a Runge–Kutta stage makes of unit quaternions are not unit quaternions, which
+   is what round 19 found in Python.
+5. **Four buffers, not one**: `v` (the velocity state), `acc` (the last acceleration), `traj` and
+   `trajv` (poses and velocities per step). The velocities are not a convenience: the energy drift
+   can only be recomputed from the kernel's states if the kernel says what the velocities were, and
+   the drift is the check that matters.
+
+**Measured against the Python engine, quarter car, 101 steps over 0.5 s**: acceleration `2.6e-8` on a
+scale of `21.8`; poses `2.9e-13` at step 1 and `1.8e-8` at step 100 (RK4 phase, not a disagreement);
+constraint `1e-15`; energy drift recomputed from the kernel's states `5.4e-8`, against Python's own
+`3.6e-8`. A trajectory is still not a committed artefact: it is not reproducible between machines,
+which is why `scripts/run_kernel.py` prints a run rather than the repository storing one.
+
+**The check caught a bug in the harness, not the kernel.** The first version of the script computed
+the energy with zero velocities and reported a drift of 19% — because it had no velocities to give
+it. That is why the velocity buffer exists.

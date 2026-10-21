@@ -59,7 +59,17 @@ def build_model(example: Path, out_root: Path) -> dict:
     status = {"id": model.topology.id, "sources": copy_sources(target, model)}
 
     if model.study is not None and model.study.analysis == "dynamics":
-        status.update({"payload": "none (dynamics)", "kernel": "none (dynamics)"})
+        # No payload — a trajectory is not a sweep — but the kernel is a dynamics kernel, and a
+        # page that wants to change a damper and re-integrate needs it.
+        status["payload"] = "none (dynamics)"
+        try:
+            written = emit_wasm(model, target / "kernel")
+            status["kernel"] = (
+                "kernel.wasm" if written["wasm"] else f"source only ({written['note']})"
+            )
+        except ValueError as exc:
+            status["kernel"] = f"not compiled: {exc}"
+            shutil_rmtree(target / "kernel")
         return status
     (target / "out.js").write_text(render(payload(sweep(model))))
     status["payload"] = "out.js"
