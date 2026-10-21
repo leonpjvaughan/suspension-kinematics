@@ -37,10 +37,11 @@ def _paths(model) -> dict[str, Path]:
     return {Path(path).name: Path(path) for path in model.files.values() if path}
 
 
-def test_a_dynamics_model_is_witnessed_not_emitted(tmp_path):
+def test_a_dynamics_model_ships_a_kernel_but_no_payload(tmp_path):
+    """A trajectory is not a sweep, so there is no payload — and the integrator is a kernel."""
     status = bundle.build_model(EXAMPLES / "quarter-car", tmp_path)
     assert status["payload"] == "none (dynamics)"
-    assert status["kernel"] == "none (dynamics)"
+    assert status["kernel"] == "kernel.wasm", status["kernel"]
     # Three files and the library: the library is the one a consumer cannot see from the model
     # directory, and the one a release could change without touching the model.
     assert set(status["sources"]) == {
@@ -84,13 +85,13 @@ def test_the_manifest_names_the_bundle_format_and_no_build_time(tmp_path):
     assert not {"built", "date", "timestamp"} & set(manifest)
 
 
-def test_a_dynamics_model_ships_its_sources_and_nothing_else(tmp_path):
+def test_a_dynamics_model_ships_its_sources_and_its_kernel(tmp_path):
     """The bytes, not only the digests: a consumer compares a trajectory against them."""
     status = bundle.build_model(EXAMPLES / "quarter-car", tmp_path)
     assert status["payload"] == "none (dynamics)"
     written = tmp_path / "models" / "quarter-car"
     assert sorted(path.name for path in (written / "source").iterdir()) == sorted(status["sources"])
     assert not (written / "out.js").exists()
-    assert not (written / "kernel").exists()
+    assert (written / "kernel" / "kernel.wasm").exists()
     source = (written / "source" / "geometry.yaml")
     assert source.read_bytes() == (EXAMPLES / "quarter-car" / "geometry.yaml").read_bytes()

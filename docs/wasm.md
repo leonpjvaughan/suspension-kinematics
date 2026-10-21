@@ -266,6 +266,14 @@ otkd-0.1.0/
 The manifest says *why* a kernel is missing rather than leaving a hole, so a consumer sees the
 current limit instead of a broken path.
 
+**A dynamics study compiles an integrator.** `M` and `C` per body, the saddle-point acceleration,
+RK4 with a projection after each step, and a trajectory buffer beside the pose: `integrate(steps)`
+fills it and `trajectory()`/`velocities()` read it. The buffers are *additive* — `v`, `acc`, `traj`,
+`trajv` — so the ABI string stays `otkd-kernel-2` and the four kinematic modules are byte-identical;
+a page checks `solver: "dynamics"` before calling the functions only a dynamics kernel has. Measured
+against Python on the quarter car: acceleration to `2.6e-8` on a scale of `21.8`, poses to `1.8e-8`
+at step 100, energy drift `5.4e-8` ([`decisions.md`](decisions.md) round 28).
+
 **Compliance is the KKT system, not a projection.** The equilibrium kernel solves
 `[∇Π − Φᵀλ ; Φ] = 0` in `(q, λ)`, the same system the Python engine solves, so a joint with three
 compliant components compiles and agrees with Python to `1e-9`. The first version projected the

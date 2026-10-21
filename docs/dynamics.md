@@ -305,6 +305,17 @@ to derive, **11 ms** per Jacobian. A 0.5 s trajectory is minutes, so it is usabl
 not for an interactive one; the compiled kernel is the answer for the latter, and the derivation,
 not the equations, is the wall.
 
+### v2.3 — the kernel integrates — **implemented**
+
+`emit --format wasm` on a dynamics study now writes a kernel that *integrates*: `M` and `C` per
+body, the saddle-point acceleration, classical RK4 and a projection after every step, with the
+trajectory in its own buffer and `integrate(steps)` as the export. Measured on the quarter car
+against the Python engine: the acceleration agrees to `2.6e-8` on a scale of `21.8`, the poses to
+`1.8e-8` at step 100, the constraint holds at `1e-15`, and the energy drift recomputed from the
+kernel's own states is `5.4e-8` — the same order as Python's. `scripts/run_kernel.py` is the
+reproduction: it builds the kernel, runs it in node and prints the table.
+[`decisions.md`](decisions.md) round 28.
+
 ### What the WASM kernel changes
 
 A dynamics step is the same three evaluations (`Φ_q`, `γ`, `M`,`f`) plus a linear solve:

@@ -4,23 +4,7 @@ Work that has been agreed and deliberately not done yet. Each entry says what it
 deferred, and what would make it done — so picking one up does not require reconstructing the
 argument.
 
-## Compiled kernels: a dynamics model
-
-Every kinematic example compiles, including the compliant and the bushed ones — square Newton, least
-squares, and the KKT equilibrium. A **dynamics** study has no kernel: `emit --format wasm` refuses
-it by name, and the release manifest records `none (dynamics)` for the quarter car.
-
-[`decisions.md`](decisions.md) round 27 fixes the design: `M` and `C` per body from the same
-Jacobians, a projection step, a trajectory buffer, and therefore `otkd-kernel-3` with an
-`integrate(steps)` export. The measured cost is a second or two for the quarter car's 0.5 s
-trajectory — a button, not a slider that re-integrates as it moves.
-
-**Done means** a page wants it: a figure whose control changes a mass, a stiffness or a damper and
-must show the motion that follows. Until there is one, the vendored trajectory is the answer and
-this stays a design. When there is one: `emit --format wasm` on `examples/quarter-car` writes a
-kernel whose poses agree with Python's at a few steps, and whose energy drift falls with the step.
-
-## Dynamics v2.3: four corners, and a load that arrives through the tyre
+## Dynamics v2.4: four corners, and a load that arrives through the tyre
 
 v2.0 (accelerations and reactions), v2.1 (time stepping, the energy test, the CLI path) and v2.2
 (`examples/quarter-car`: a heaving chassis, a coil-over, the tyre on a road plane) are implemented
@@ -48,6 +32,10 @@ it.
 
 ## Done
 
+- **The dynamics kernel**: `emit --format wasm` on a dynamics study writes an integrator — `M`, `C`,
+  the saddle-point acceleration, RK4 with projection — and `scripts/run_kernel.py` runs it. Agrees
+  with Python to `1.8e-8` on the poses and `5.4e-8` on the energy ([`decisions.md`](decisions.md)
+  round 28).
 - **The velocity products are per body**: `37.0 ms → 10.3 ms` per acceleration on the quarter car,
   with the same energy drift ([`decisions.md`](decisions.md) round 26).
 - **The kernel's equilibrium path** is the KKT system, so a bush at a ball joint compiles and agrees

@@ -24,7 +24,7 @@ from otkd.solvers.equilibrium import equilibrium
 from otkd.solvers.least_squares import least_squares
 from otkd.solvers.newton import newton
 from otkd.solvers.system import System
-from tests.helpers import build
+from tests.helpers import EXAMPLES, build
 
 THETAS = (-0.1, -0.03, 0.0, 0.06, 0.1)
 
@@ -148,6 +148,107 @@ def redundant_kernel(tmp_path_factory):
 @pytest.fixture(scope="module")
 def compliant_kernel(tmp_path_factory):
     return _emit_and_run(tmp_path_factory, "double-wishbone-compliant")
+
+
+DYNAMICS_SCRIPT = """
+import { readFile, writeFile } from 'node:fs/promises';
+import kernel from './kernel.js';
+
+const ref = JSON.parse(await readFile('./reference.json'));
+await kernel.ready();
+const status = kernel.setGeometry(ref);
+kernel.design();
+kernel.setDrive(0);
+kernel.setVelocity(new Array(kernel.manifest.layout.sizes.q).fill(0));
+const resting = kernel.accelerations();
+const worst = kernel.integrate(ref.steps);
+await writeFile('./dynamics.json', JSON.stringify({
+  status,
+  acceleration: resting.acceleration,
+  accelerationResidual: resting.residual,
+  constraint: worst,
+  trajectory: kernel.trajectory(ref.steps).map((q) => Array.from(q)),
+  velocities: kernel.velocities(ref.steps).map((v) => Array.from(v)),
+}));
+"""
+
+
+@pytest.fixture(scope="module")
+def dynamics_kernel(tmp_path_factory):
+    """The quarter car: a trajectory, from the kernel, against Python's own integration."""
+    from otkd.problem import dynamics
+    from otkd.problem.compile import Problem
+
+    root = tmp_path_factory.mktemp("wasm-dynamics")
+    model = otkd.load(EXAMPLES / "quarter-car")
+    out = root / "kernel"
+    written = emit_wasm(model, out)
+    if written["wasm"] is None:
+        pytest.skip(written["note"] or "no wasm toolchain")
+    if not _node_available():
+        pytest.skip("node is not installed: cannot run the module")
+    problem = Problem(model)
+    manifest = json.loads((out / "kernel.json").read_text())
+    (out / "reference.json").write_text(
+        json.dumps(
+            {
+                "points": model.geometry.points,
+                "axes": model.geometry.axes,
+                "numbers": manifest["default_numbers"],
+                "steps": manifest["integration"]["steps"],
+            }
+        )
+    )
+    (out / "run.mjs").write_text(DYNAMICS_SCRIPT)
+    result = subprocess.run(["node", "run.mjs"], cwd=out, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        pytest.fail(f"node failed:\n{result.stdout}\n{result.stderr}")
+    return out, json.loads((out / "dynamics.json").read_text()), problem, manifest
+
+
+def test_the_kernel_writes_a_dynamics_solver(dynamics_kernel):
+    _, _, _, manifest = dynamics_kernel
+    assert manifest["solver"] == "dynamics"
+    assert manifest["integration"]["steps"] == 101
+    assert manifest["layout"]["sizes"]["traj"] == 101 * manifest["layout"]["sizes"]["q"]
+
+
+def test_the_kernel_reproduces_pythons_acceleration(dynamics_kernel):
+    from otkd.problem import dynamics
+
+    _, result, problem, _ = dynamics_kernel
+    reference = dynamics.accelerations(problem, problem.q0(), np.zeros(problem.n))
+    assert result["status"] == 0
+    scale = np.max(np.abs(reference.qddot))
+    assert np.max(np.abs(np.array(result["acceleration"]) - reference.qddot)) < 1e-6 * scale
+
+
+def test_the_kernel_reproduces_pythons_trajectory(dynamics_kernel):
+    from otkd.problem import dynamics
+
+    _, result, problem, manifest = dynamics_kernel
+    trajectory = dynamics.integrate(
+        problem,
+        problem.q0(),
+        np.zeros(problem.n),
+        duration=manifest["integration"]["duration"],
+        steps=manifest["integration"]["steps"],
+    )
+    states = np.array(result["trajectory"])
+    assert result["constraint"] < 1e-9
+    for step in (1, 10, 50, 100):
+        assert np.max(np.abs(states[step] - trajectory.q[step])) < 1e-6, step
+
+
+def test_the_kernel_trajectory_conserves_energy(dynamics_kernel):
+    """The check that caught the missing velocity-product term, run on the kernel's own states."""
+    from otkd.problem import dynamics
+
+    _, result, problem, _ = dynamics_kernel
+    states = np.array(result["trajectory"])
+    speeds = np.array(result["velocities"])
+    energies = np.array([dynamics.energy(problem, q, v, None)[2] for q, v in zip(states, speeds)])
+    assert np.max(np.abs(energies - energies[0])) / abs(energies[0]) < 1e-6
 
 
 @pytest.fixture(scope="module")

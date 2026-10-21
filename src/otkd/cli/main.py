@@ -76,9 +76,16 @@ def _dispatch(args) -> int:
     if args.command == "solve":
         return _solve(model, args)
     if args.command == "emit":
-        if model.study is not None and model.study.analysis == "dynamics":
+        # A dynamics study has no *sweep* to emit, but it does have a kernel: the integrator is
+        # generated like the pose solvers, so `--format wasm` is the one emit it accepts.
+        if (
+            model.study is not None
+            and model.study.analysis == "dynamics"
+            and args.format != "wasm"
+        ):
             print(
-                "a dynamics study produces a trajectory, not a sweep; write it with `otkd solve --json`",
+                "a dynamics study produces a trajectory, not a sweep; write it with "
+                "`otkd solve --json`, or compile it with `--format wasm`",
                 file=sys.stderr,
             )
             return 1

@@ -803,3 +803,41 @@ re-integrate, with the study it would drive.
 **What is deliberately not in it.** No stiff-integrator machinery (an implicit step, a
 symmetric/symplectic scheme). RK4 with projection is what the package does and what its tests
 measure; a browser that needs a stiff coil should be given a damper, not a different integrator.
+
+---
+
+## Round 28: the dynamics kernel (accepted, implemented)
+
+Round 27 designed it and said it would need `otkd-kernel-3`. It does not, and that is the first
+decision worth recording: the trajectory buffers are **added** after the existing ones, so every
+offset a kinematic page reads is unchanged, nothing in the four kinematic modules moves, and the ABI
+string can stay `otkd-kernel-2`. What a consumer needs to know is not a new number but a new fact —
+`solver: "dynamics"` — and that is in the manifest.
+
+What the generated Rust does, and why each piece is where it is:
+
+1. **`M` per body** from the same analytic point Jacobian the constraint rows use, the quaternion's
+   `ω` map, and the model's inertia tensors as constants. No new symbolics.
+2. **`C` per body**, sixteen local block evaluations each, exactly the form round 26 settled.
+3. **The acceleration** as the saddle-point system `[[M, Φᵀ],[Φ,0]][q̈;λ] = [f;γ]`, with two
+   regularisations stated where they happen: the constraint block gets `−εI` because a dynamics model
+   *has* a free direction and its constraint rows a left null vector, so the system is otherwise
+   singular; and the projection's `J Jᵀ dλ = −Φ` gets `+εI` scaled to its own diagonal, for the same
+   reason.
+4. **RK4 with a projection after every step** and the gauge renormalised before each stage — the
+   linear combinations a Runge–Kutta stage makes of unit quaternions are not unit quaternions, which
+   is what round 19 found in Python.
+5. **Four buffers, not one**: `v` (the velocity state), `acc` (the last acceleration), `traj` and
+   `trajv` (poses and velocities per step). The velocities are not a convenience: the energy drift
+   can only be recomputed from the kernel's states if the kernel says what the velocities were, and
+   the drift is the check that matters.
+
+**Measured against the Python engine, quarter car, 101 steps over 0.5 s**: acceleration `2.6e-8` on a
+scale of `21.8`; poses `2.9e-13` at step 1 and `1.8e-8` at step 100 (RK4 phase, not a disagreement);
+constraint `1e-15`; energy drift recomputed from the kernel's states `5.4e-8`, against Python's own
+`3.6e-8`. A trajectory is still not a committed artefact: it is not reproducible between machines,
+which is why `scripts/run_kernel.py` prints a run rather than the repository storing one.
+
+**The check caught a bug in the harness, not the kernel.** The first version of the script computed
+the energy with zero velocities and reported a drift of 19% — because it had no velocities to give
+it. That is why the velocity buffer exists.
