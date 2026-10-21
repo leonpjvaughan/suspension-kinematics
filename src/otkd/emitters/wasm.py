@@ -75,6 +75,7 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
         sizes["acc"] = problem.n
         sizes["traj"] = study.steps * problem.n
         sizes["trajv"] = study.steps * problem.n
+        sizes["ld"] = 3 * len(study.loads)
     layout = Layout(sizes=sizes, offsets={}, total=0)
     offset = 0
     offsets = {}
@@ -123,7 +124,13 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
                     "duration": study.duration,
                     "steps": study.steps,
                     "dt": (study.duration or 0.0) / (study.steps - 1),
-                }
+                },
+                # A load's direction belongs to the model; its magnitude is a number a page may
+                # change, so it has a slot and a default.
+                "loads": [
+                    {"site": load.site, "force": [float(v) for v in load.force]}
+                    for load in study.loads
+                ],
             }
             if kind == "dynamics"
             else {}
@@ -241,7 +248,7 @@ def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, n
     ]
     offsets = ["q", "g", "t", "out", "jac", "met", "world", "pts", "axs", "num"]
     if kind == "dynamics":
-        offsets += ["v", "acc", "traj", "trajv"]
+        offsets += ["v", "acc", "traj", "trajv", "ld"]
     for key in offsets:
         lines.append(f"const O_{key.upper()}: usize = {off[key]};")
     lines += [
@@ -799,6 +806,7 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
         "// ---- dynamics: M qddot + C = f - Phi^T lambda, with Phi qddot = gamma ----",
         f"const NB: usize = {len(bodies)};",
         f"const R: usize = {len(rows)};",
+        f"const LD: usize = {3 * len(loads)};",
         f"const S: usize = {len(springs)};",
         "const K: usize = N + R;",
         f"const DT: f64 = {study.duration / (study.steps - 1):.17e};",
@@ -935,7 +943,7 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
         "}",
         "",
         "/// Gravity, the study's loads, and the springs' and dampers' internal forces.",
-        "fn forces(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], out: &mut [f64; N]) {",
+        "fn forces(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], ld: &[f64; LD], out: &mut [f64; N]) {",
         "    for i in 0..N { out[i] = 0.0; }",
         "    for b in 0..NB {",
         "        let s = BODY_START[b];",
@@ -948,7 +956,7 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
         "        }",
         "    }",
     ]
-    for body, point, force in loads:
+    for index, (body, point, _force) in enumerate(loads):
         values = jacobian_rows(body, point)
         lines.append("    {")
         lines.append("        let jx = [")
@@ -956,11 +964,13 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
             chunk = ", ".join(values[k * n : (k + 1) * n])
             lines.append(f"            [{chunk}],")
         lines.append("        ];")
+        # The *direction* is what a model says a load is; its magnitude is a number a page may
+        # want to change, so it comes from the load buffer rather than the source.
         for k in range(3):
-            if force[k]:
-                lines.append(
-                    f"        for j in 0..N {{ out[j] += jx[{k}][j] * {force[k]:.17e}; }}"
-                )
+            lines.append(
+                f"        let value = ld[{index * 3 + k}];"
+                f" for j in 0..N {{ out[j] += jx[{k}][j] * value; }}"
+            )
         lines.append("    }")
     lines += [
         "    let mut values = [0.0f64; M];",
@@ -1004,7 +1014,7 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
         "}",
         "",
         "/// One acceleration, by the saddle-point system.",
-        "fn accel(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], out: &mut [f64; N], lam: &mut [f64; R]) {",
+        "fn accel(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], ld: &[f64; LD], out: &mut [f64; N], lam: &mut [f64; R]) {",
         "    let mut m = [0.0f64; N*N];",
         "    for b in 0..NB {",
         "        let block = body_block(b, q);",
@@ -1012,7 +1022,7 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
         "        for r in 0..7 { for c in 0..7 { m[(s + r) * N + (s + c)] = block[r][c]; } }",
         "    }",
         "    let mut f = [0.0f64; N];",
-        "    forces(q, v, g, t, &mut f);",
+        "    forces(q, v, g, t, ld, &mut f);",
         "    let mut c = [0.0f64; N];",
         "    velocity_products(q, v, &mut c);",
         "    for i in 0..N { f[i] -= c[i]; }",
@@ -1124,11 +1134,11 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
         "    }",
         "}",
         "",
-        "fn derivative(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], dq: &mut [f64; N], dv: &mut [f64; N]) {",
+        "fn derivative(q: &[f64; N], v: &[f64; N], g: &[f64; G], t: &[f64; A], ld: &[f64; LD], dq: &mut [f64; N], dv: &mut [f64; N]) {",
         "    let mut stage = *q;",
         "    gauge(&mut stage);",
         "    let mut lam = [0.0f64; R];",
-        "    accel(&stage, v, g, t, dv, &mut lam);",
+        "    accel(&stage, v, g, t, ld, dv, &mut lam);",
         "    for i in 0..N { dq[i] = v[i]; }",
         "}",
         "",
@@ -1145,9 +1155,11 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
         "        for i in 0..G { g[i] = MEM[O_G + i]; }",
         "        for i in 0..A { t[i] = MEM[O_T + i]; }",
         "    }",
+        "    let mut ld = [0.0f64; LD];",
+        "    unsafe { for i in 0..LD { ld[i] = MEM[O_LD + i]; } }",
         "    let mut out = [0.0f64; N];",
         "    let mut lam = [0.0f64; R];",
-        "    accel(&q, &v, &g, &t, &mut out, &mut lam);",
+        "    accel(&q, &v, &g, &t, &ld, &mut out, &mut lam);",
         "    unsafe { for i in 0..N { MEM[O_ACC + i] = out[i]; } }",
         "    dyn_maxabs(&out)",
         "}",
@@ -1168,31 +1180,33 @@ def _dynamics_solver(problem: Problem, model: Model) -> list[str]:
         "        for i in 0..G { g[i] = MEM[O_G + i]; }",
         "        for i in 0..A { t[i] = MEM[O_T + i]; }",
         "    }",
+        "    let mut ld = [0.0f64; LD];",
+        "    unsafe { for i in 0..LD { ld[i] = MEM[O_LD + i]; } }",
         "    gauge(&mut q);",
         "    let mut worst = 0.0f64;",
         "    for step in 0..steps {",
         "        if step > 0 {",
         "            let mut k1q = [0.0f64; N];",
         "            let mut k1v = [0.0f64; N];",
-        "            derivative(&q, &v, &g, &t, &mut k1q, &mut k1v);",
+        "            derivative(&q, &v, &g, &t, &ld, &mut k1q, &mut k1v);",
         "            let mut q2 = q;",
         "            let mut v2 = v;",
         "            for i in 0..N { q2[i] += 0.5 * DT * k1q[i]; v2[i] += 0.5 * DT * k1v[i]; }",
         "            let mut k2q = [0.0f64; N];",
         "            let mut k2v = [0.0f64; N];",
-        "            derivative(&q2, &v2, &g, &t, &mut k2q, &mut k2v);",
+        "            derivative(&q2, &v2, &g, &t, &ld, &mut k2q, &mut k2v);",
         "            let mut q3 = q;",
         "            let mut v3 = v;",
         "            for i in 0..N { q3[i] += 0.5 * DT * k2q[i]; v3[i] += 0.5 * DT * k2v[i]; }",
         "            let mut k3q = [0.0f64; N];",
         "            let mut k3v = [0.0f64; N];",
-        "            derivative(&q3, &v3, &g, &t, &mut k3q, &mut k3v);",
+        "            derivative(&q3, &v3, &g, &t, &ld, &mut k3q, &mut k3v);",
         "            let mut q4 = q;",
         "            let mut v4 = v;",
         "            for i in 0..N { q4[i] += DT * k3q[i]; v4[i] += DT * k3v[i]; }",
         "            let mut k4q = [0.0f64; N];",
         "            let mut k4v = [0.0f64; N];",
-        "            derivative(&q4, &v4, &g, &t, &mut k4q, &mut k4v);",
+        "            derivative(&q4, &v4, &g, &t, &ld, &mut k4q, &mut k4v);",
         "            for i in 0..N {",
         "                q[i] += DT / 6.0 * (k1q[i] + 2.0 * k2q[i] + 2.0 * k3q[i] + k4q[i]);",
         "                v[i] += DT / 6.0 * (k1v[i] + 2.0 * k2v[i] + 2.0 * k3v[i] + k4v[i]);",
@@ -1492,6 +1506,12 @@ def _build(target: Path) -> tuple[Path | None, str]:
 
 
 DYNAMICS_GLUE = """
+/** Set the applied loads, three numbers per load: x, y, z in newtons. */
+export function setLoads(values) {
+  const mem = memory();
+  values.forEach((value, i) => { mem[at('ld') + i] = value; });
+}
+
 /** Set the velocity state, one number per pose unknown. */
 export function setVelocity(values) {
   const mem = memory();
@@ -1546,7 +1566,7 @@ def _js_glue(manifest: dict, module_b64: str) -> str:
     dynamics = manifest.get("solver") == "dynamics"
     dynamics_glue = DYNAMICS_GLUE if dynamics else ""
     dynamics_api = (
-        "  setVelocity, velocity, accelerations, integrate, trajectory, velocities,\n"
+        "  setVelocity, velocity, accelerations, integrate, trajectory, velocities, setLoads,\n"
         if dynamics
         else ""
     )
@@ -1608,7 +1628,15 @@ export function setGeometry(geometry) {{
     mem.set(a, at('axs') + 3 * i);
   }});
   (geometry.numbers ?? []).forEach((value, i) => {{ mem[at('num') + i] = value ?? NaN; }});
-  return instance.exports.pack();
+  const status = instance.exports.pack();
+  // A kernel with a load buffer starts from the model's own loads, so a page that changes nothing
+  // gets the model; `setLoads` is the override, not a requirement.
+  if (manifest.layout.sizes.ld) {{
+    (manifest.loads ?? []).forEach((load, l) => load.force.forEach((value, k) => {{
+      mem[at('ld') + 3 * l + k] = value;
+    }}));
+  }}
+  return status;
 }}
 
 /** Set the driven coordinate(s). */

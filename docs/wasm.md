@@ -266,6 +266,12 @@ otkd-0.1.0/
 The manifest says *why* a kernel is missing rather than leaving a hole, so a consumer sees the
 current limit instead of a broken path.
 
+**A load's direction is the model's; its magnitude is a slot.** A dynamics kernel has a load buffer
+— three numbers per load in the study — and `setLoads([...])` writes it. `setGeometry` fills it with
+the model's own loads first, so a page that changes nothing gets the model and `setLoads` is the
+override. The manifest lists the loads with their sites and defaults. Measured against Python with
+the corner's load at 1× and 2×: the peak heave agrees to `1e-8` m both times.
+
 **The manifest carries the model's own default geometry.** `default_geometry` is the points, the
 axes and the numbers a page would otherwise have to reconstruct — including the points only a
 dynamics model has, like a coil's seat. A page sets it once and then changes one number, which is
