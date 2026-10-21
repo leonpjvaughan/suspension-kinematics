@@ -6,14 +6,19 @@ argument.
 
 ## Compiled kernels: a dynamics model
 
-Every kinematic example now compiles, including the compliant and the bushed ones — square Newton,
-least squares, and the KKT equilibrium ([`decisions.md`](decisions.md) round 25). What has no
-kernel is a **dynamics** study: `emit --format wasm` refuses it by name, and the release manifest
-records `none (dynamics)` for the quarter car. A page that wants a trajectory in the browser needs
-a kernel that integrates, which is a different program from the three solvers that exist.
+Every kinematic example compiles, including the compliant and the bushed ones — square Newton, least
+squares, and the KKT equilibrium. A **dynamics** study has no kernel: `emit --format wasm` refuses
+it by name, and the release manifest records `none (dynamics)` for the quarter car.
 
-Done means: `emit --format wasm` on `examples/quarter-car` writes a kernel whose trajectory agrees
-with Python's to `1e-9` over the study, the way the kinematic kernels agree on a pose.
+[`decisions.md`](decisions.md) round 27 fixes the design: `M` and `C` per body from the same
+Jacobians, a projection step, a trajectory buffer, and therefore `otkd-kernel-3` with an
+`integrate(steps)` export. The measured cost is a second or two for the quarter car's 0.5 s
+trajectory — a button, not a slider that re-integrates as it moves.
+
+**Done means** a page wants it: a figure whose control changes a mass, a stiffness or a damper and
+must show the motion that follows. Until there is one, the vendored trajectory is the answer and
+this stays a design. When there is one: `emit --format wasm` on `examples/quarter-car` writes a
+kernel whose poses agree with Python's at a few steps, and whose energy drift falls with the step.
 
 ## Dynamics v2.3: four corners, and a load that arrives through the tyre
 

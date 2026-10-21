@@ -762,3 +762,44 @@ sixteen local evaluations each. Measured on the quarter-car state: **37.0 ms →
 acceleration, and the two agree to `2.4e-6` on a scale of `6509` (the finite-difference noise). The
 energy test is unchanged: drift `3.6e-8` at 101 steps and `1.3e-10` at 401, which is the check that
 the term is still the right term.
+
+---
+
+## Round 27: what a dynamics kernel would have to be (accepted as a design, not built)
+
+A page can already animate a trajectory — the book vendors one and plots it. What a *kernel* adds is
+a reader changing something and seeing the answer, so the question is not "can it be compiled" but
+"what would it cost, and what is it for". This round fixes the design; nothing here is built.
+
+**What it needs that the kinematic kernels do not have.**
+
+1. **`M(q)`, per body.** The same Jacobians the constraint rows use, plus the angular-velocity map
+   and the inertia tensor. No new symbolics: `mass_matrix` in Python already builds a body's block
+   from a 3×7 point Jacobian, and that is exactly what the emitter generates.
+2. **`C(q, q̇)`, per body, by finite differences.** Sixteen local Jacobian evaluations per body per
+   acceleration, on the pattern [`decisions.md`](decisions.md) round 26 settled in Python. Measured
+   there at 10.3 ms per acceleration for the quarter car in Python; a browser pays it four times per
+   RK4 step, so a 0.5 s trajectory at 100 steps is a second or two — fine for a button, not for a
+   slider that re-integrates while it moves.
+3. **A projection step.** After each step, `Φ = 0` and `Φ_q q̇ = 0`, by one linear solve each — the
+   same `solve_linear` the equilibrium kernel already has.
+4. **A trajectory buffer, which means a new ABI.** The current layout has one pose slot. A
+   trajectory is `steps × n` numbers, so this is `otkd-kernel-3` with a second buffer and an
+   `integrate(steps)` export, and the manifest's per-model `solver` gains `"dynamics"`. A bundle
+   that ships it must say so, and a page must be able to tell one ABI from the other.
+
+**What it would be checked against.** Python's own integration, on the poses at a few steps and on
+the *behaviour* rather than the bits: the energy drift must fall with the step, which is the check
+that caught the missing velocity-product term in the first place. A trajectory is not reproducible
+between machines and must never be a committed artefact — the same rule that made a compliant
+payload report one converged iterate instead of its path.
+
+**Why it is not being built now.** Nothing is blocked on it. The book's §1.6 plots a vendored
+trajectory, which is data and needs no kernel; the kernel's value appears when a reader wants to
+change a parameter — a damper, a mass, a stiffness — and see the motion, which is a page design
+before it is an engine one. The condition for starting is that page: a figure whose slider must
+re-integrate, with the study it would drive.
+
+**What is deliberately not in it.** No stiff-integrator machinery (an implicit step, a
+symmetric/symplectic scheme). RK4 with projection is what the package does and what its tests
+measure; a browser that needs a stiff coil should be given a damper, not a different integrator.
