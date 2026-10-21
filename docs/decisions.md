@@ -841,3 +841,28 @@ which is why `scripts/run_kernel.py` prints a run rather than the repository sto
 **The check caught a bug in the harness, not the kernel.** The first version of the script computed
 the energy with zero velocities and reported a drift of 19% — because it had no velocities to give
 it. That is why the velocity buffer exists.
+
+---
+
+## Round 29: a table the engine re-runs, and the `design()` bug it found (accepted)
+
+The book asked whether §1.6 could show a *family* rather than one trajectory, and said a table with
+a control would do. Building it needed two things from the kernel, and the second exposed a bug.
+
+1. **`default_geometry` in the manifest.** A parameter control has to set the model's geometry and
+   then change one number; before this, a page would have had to reconstruct the kernel's points —
+   including the ones only a dynamics model has, like the coil's seat — from somewhere other than
+   the kernel. The manifest now carries the points, the normalised axes and the numbers, and a test
+   sets them back and requires the kernel to accept them.
+2. **`design()` wrote only the non-zero pose entries**, so it reset the rotations and left the
+   positions wherever the last solve or integration stopped. For a kinematic page that was
+   invisible: `design()` was always followed by a solve from a good seed. For a page that
+   *re-integrates*, it is fatal — the second run started 70 mm below the design height and diverged,
+   with a constraint violation of `1e-3` where the first run had `1e-15`. Found because a table of
+   six stiffnesses in one process disagreed with six single-stiffness runs. It now writes the whole
+   pose, and a test requires it.
+
+**Measured after the fix**, quarter car, the coil's compliance as the one free number, 101 steps:
+**0.05 MN/m → −326 mm, 0.1 → −213, 0.2 → −117, 0.5 → −49, 1 → −25, 2 → −13** of peak heave, every
+run with a constraint violation at `1e-15` and a repeat at the end reproducing the first. That
+monotone ladder is what the book's table shows.
