@@ -103,6 +103,18 @@ def emit_wasm(model: Model, out_dir: str | Path, *, build: bool = True) -> dict:
         # The design values for those slots, so a page does not have to reconstruct them.
         # `null` means "derive it": a missing tie-rod length defaults to the design separation.
         "default_numbers": _default_numbers(problem, numbers),
+        # The model's own design geometry, so a page can set it once and then change one number.
+        # Without this a parameter figure has to reconstruct the model's points — including the
+        # ones only a dynamics model has — from somewhere that is not the kernel.
+        "default_geometry": {
+            "points": {name: [float(v) for v in problem.resolved.points[name]] for name in points},
+            "axes": {
+                name: [float(v) / float(sum(c * c for c in model.geometry.axes[name]) ** 0.5)
+                       for v in model.geometry.axes[name]]
+                for name in axes
+            },
+            "numbers": _default_numbers(problem, numbers),
+        },
         "rows": [{"name": row.name, "unit": row.unit, "group": row.group} for row in problem.rows],
         "drive": [drive.actuator for drive in problem.drives],
         **(
@@ -293,10 +305,12 @@ def _rust_source(problem: Problem, model: Model, layout: Layout, points, axes, n
 
     # design pose
     q0 = problem.q0()
+    # Every entry, including the zeros: a design pose is a whole pose, and a page that integrates
+    # and then re-designs must not start from wherever the last run stopped. Writing only the
+    # non-zero entries was a size optimisation that made `design()` mean "reset the rotations".
     lines += ["#[no_mangle]", "pub extern \"C\" fn design() {", "    unsafe {"]
     for i, value in enumerate(q0):
-        if value != 0.0:
-            lines.append(f"        MEM[O_Q + {i}] = {value:.17e};")
+        lines.append(f"        MEM[O_Q + {i}] = {value:.17e};")
     lines += ["    }", "}", ""]
 
     # packing: raw geometry -> the g vector

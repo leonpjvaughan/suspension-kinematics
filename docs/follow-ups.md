@@ -32,6 +32,9 @@ it.
 
 ## Done
 
+- **`default_geometry` in the manifest, and a `design()` that means it** — a page can set the model
+  and change one number, and re-integrating no longer starts from the last run's pose
+  ([`decisions.md`](decisions.md) round 29).
 - **The dynamics kernel**: `emit --format wasm` on a dynamics study writes an integrator — `M`, `C`,
   the saddle-point acceleration, RK4 with projection — and `scripts/run_kernel.py` runs it. Agrees
   with Python to `1.8e-8` on the poses and `5.4e-8` on the energy ([`decisions.md`](decisions.md)

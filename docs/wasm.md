@@ -266,6 +266,11 @@ otkd-0.1.0/
 The manifest says *why* a kernel is missing rather than leaving a hole, so a consumer sees the
 current limit instead of a broken path.
 
+**The manifest carries the model's own default geometry.** `default_geometry` is the points, the
+axes and the numbers a page would otherwise have to reconstruct — including the points only a
+dynamics model has, like a coil's seat. A page sets it once and then changes one number, which is
+what a parameter control is: `setGeometry({ ...manifest.default_geometry, numbers })`.
+
 **A dynamics study compiles an integrator.** `M` and `C` per body, the saddle-point acceleration,
 RK4 with a projection after each step, and a trajectory buffer beside the pose: `integrate(steps)`
 fills it and `trajectory()`/`velocities()` read it. The buffers are *additive* — `v`, `acc`, `traj`,

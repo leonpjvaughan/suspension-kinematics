@@ -162,12 +162,20 @@ kernel.setDrive(0);
 kernel.setVelocity(new Array(kernel.manifest.layout.sizes.q).fill(0));
 const resting = kernel.accelerations();
 const worst = kernel.integrate(ref.steps);
+// `design()` has to restore the whole pose, not just the rotations: a page that integrates and
+// then re-runs must not start from wherever the last run stopped.
+kernel.design();
+const redesign = kernel.pose();
+// And the manifest's own default geometry has to be something the kernel accepts.
+const defaultsStatus = kernel.setGeometry(kernel.manifest.default_geometry);
 await writeFile('./dynamics.json', JSON.stringify({
   status,
   acceleration: resting.acceleration,
   accelerationResidual: resting.residual,
   constraint: worst,
   trajectory: kernel.trajectory(ref.steps).map((q) => Array.from(q)),
+  redesign,
+  defaultsStatus,
   velocities: kernel.velocities(ref.steps).map((v) => Array.from(v)),
 }));
 """
@@ -204,6 +212,18 @@ def dynamics_kernel(tmp_path_factory):
     if result.returncode != 0:
         pytest.fail(f"node failed:\n{result.stdout}\n{result.stderr}")
     return out, json.loads((out / "dynamics.json").read_text()), problem, manifest
+
+
+def test_design_restores_the_whole_pose(dynamics_kernel):
+    """A second run must start where `design()` says, not where the last one stopped."""
+    _, result, problem, _ = dynamics_kernel
+    assert np.allclose(np.array(result["redesign"]), problem.q0())
+
+
+def test_the_kernel_accepts_its_own_default_geometry(dynamics_kernel):
+    """`default_geometry` is what a page changes one number in, so it has to be usable as it is."""
+    _, result, _, _ = dynamics_kernel
+    assert result["defaultsStatus"] == 0
 
 
 def test_the_kernel_writes_a_dynamics_solver(dynamics_kernel):
