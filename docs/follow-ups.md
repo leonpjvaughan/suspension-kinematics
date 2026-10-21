@@ -4,17 +4,27 @@ Work that has been agreed and deliberately not done yet. Each entry says what it
 deferred, and what would make it done — so picking one up does not require reconstructing the
 argument.
 
-## Compiled kernels, stage 2
+## Compiled kernels: a dynamics model
 
-The kernel currently compiles the square Newton path. The emitter *refuses* a redundant or
-compliant model with a message rather than emitting a solver for the wrong equations, so the
-gap is loud. Three increments close it, in this order.
+Every kinematic example now compiles, including the compliant and the bushed ones — square Newton,
+least squares, and the KKT equilibrium ([`decisions.md`](decisions.md) round 25). What has no
+kernel is a **dynamics** study: `emit --format wasm` refuses it by name, and the release manifest
+records `none (dynamics)` for the quarter car. A page that wants a trajectory in the browser needs
+a kernel that integrates, which is a different program from the three solvers that exist.
 
-## Dynamics
+Done means: `emit --format wasm` on `examples/quarter-car` writes a kernel whose trajectory agrees
+with Python's to `1e-9` over the study, the way the kinematic kernels agree on a pose.
 
-v2.0 (accelerations and reactions) and v2.1 (time stepping with projection, the energy test, and
-a `dynamics` study shape with a CLI path) are implemented and tested. Remaining, per
-[`dynamics.md`](dynamics.md) §7: v2.2 — four corners, a chassis body and a contact-patch load.
+## Dynamics v2.3: four corners, and a load that arrives through the tyre
+
+v2.0 (accelerations and reactions), v2.1 (time stepping, the energy test, the CLI path) and v2.2
+(`examples/quarter-car`: a heaving chassis, a coil-over, the tyre on a road plane) are implemented
+and tested. Measured for the next step: a four-corner model compiles — 13 moving bodies, 91
+unknowns, 167 s to derive, 11 ms per Jacobian — so it is usable for a figure and not for real time.
+
+Remaining, per [`dynamics.md`](dynamics.md) §7: the chassis as a full body with its own compliance,
+and a load that arrives through the contact patch rather than at the wheel centre. The quarter car's
+`coil` is a spring with no damper, which is what the book's §1.6 quotes.
 
 ## The UI
 
@@ -31,18 +41,10 @@ it.
 | An end-to-end CLI test | the library is covered; `check`, `solve` and `emit` are exercised by hand and by CI shell steps, not by a test |
 | A sanity check on the toe curve | the steering arm was lengthened until bump steer was believable (±0.6°); it wants an engineer's eye, not a test |
 
-## The dynamics acceleration rebuilds the mass matrix 2n+2 times
-
-`velocity_products` takes a finite-difference gradient of `½ q̇ᵀM q̇` over `q`, so one acceleration
-costs `2n+2` mass-matrix evaluations — 58 for the quarter car, on every RK4 stage of every step.
-It is the bulk of a trajectory's cost. The term is exact and the trajectories are short, so this is
-a performance item, not a correctness one.
-
-Done means: the gradient of the kinetic energy is assembled per body from the same Jacobians the
-mass matrix already builds, and the quarter-car energy test still passes with the same drift.
-
 ## Done
 
+- **The velocity products are per body**: `37.0 ms → 10.3 ms` per acceleration on the quarter car,
+  with the same energy drift ([`decisions.md`](decisions.md) round 26).
 - **The kernel's equilibrium path** is the KKT system, so a bush at a ball joint compiles and agrees
   with Python to `1e-9` ([`decisions.md`](decisions.md) round 25).
 - **A compliant upper joint and a stiffness axis**: `examples/double-wishbone-ubj` sweeps the bush

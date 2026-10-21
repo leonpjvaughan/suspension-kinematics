@@ -750,3 +750,15 @@ The follow-up's last piece: one run has to produce the ladder, not four exports.
    machines; a *run* is not an artefact, so `--json` also writes `trace` for the representative
    frame, unrounded, for a figure that wants to plot how the solve got there. The two are separate
    keys so a page can say which it drew.
+
+---
+
+## Round 26: the velocity products are per body (accepted)
+
+`C = Ṁq̇ − ∂(½q̇ᵀMq̇)/∂q` was differentiated as if `M` were dense: forty times over the whole model
+for the quarter car's gradient, two more for the `Ṁq̇` term. `M` is block diagonal — a body's kinetic
+energy depends only on its own seven coordinates — so the gradient is now assembled body by body,
+sixteen local evaluations each. Measured on the quarter-car state: **37.0 ms → 10.3 ms** per
+acceleration, and the two agree to `2.4e-6` on a scale of `6509` (the finite-difference noise). The
+energy test is unchanged: drift `3.6e-8` at 101 steps and `1.3e-10` at 401, which is the check that
+the term is still the right term.

@@ -129,24 +129,73 @@ def velocity_products(problem: Problem, q: np.ndarray, qdot: np.ndarray, g: np.n
     on its orientation, and the quaternion parametrisation makes even a pure rotation change `M`.
     Omitting `C` leaves the total energy varying along the motion — which is exactly what the
     quarter-car test caught, at a magnitude that did not shrink with the step size.
+
+    **Per body, not per model.** `M` is block diagonal, so a body's kinetic energy depends only on
+    its own seven coordinates. Differentiating the whole model's energy forty times to find the
+    gradient ignores that; differentiating each body's sixteen times is the same number for less
+    work — and the block diagonal is the reason, so the code says so.
     """
-    def kinetic(state: np.ndarray) -> float:
-        return 0.5 * float(qdot @ mass_matrix(problem, state, g) @ qdot)
-
+    dynamics = _dynamics_block(problem)
     gradient = np.zeros(problem.n)
-    for j in range(problem.n):
-        step = 1e-7 * (1.0 + abs(q[j]))
-        offset = np.zeros(problem.n)
-        offset[j] = step
-        gradient[j] = (kinetic(q + offset) - kinetic(q - offset)) / (2.0 * step)
-
     speed = float(np.linalg.norm(qdot))
-    if speed == 0.0:
-        return -gradient
-    step = 1e-7 / speed
-    forward = mass_matrix(problem, q + step * qdot, g) @ qdot
-    backward = mass_matrix(problem, q - step * qdot, g) @ qdot
-    return (forward - backward) / (2.0 * step) - gradient
+    step = 1e-7 / speed if speed else 0.0
+
+    for body in problem.moving:
+        numbers = dynamics.bodies.get(body)
+        if numbers is None:
+            raise SolverError(f"body {body!r} has no mass, so the model has no dynamics")
+        block = _body_indices(problem, body)
+        start = block.start
+        assert start is not None
+        offset = _centre_of_mass(problem, numbers)
+        inertia = _inertia(numbers.inertia)
+        mass = float(numbers.mass)
+        velocity = qdot[block]
+
+        for local in range(7):
+            j = start + local
+            h = 1e-7 * (1.0 + abs(q[j]))
+            plus, minus = q.copy(), q.copy()
+            plus[j] += h
+            minus[j] -= h
+            gradient[j] = (
+                _body_kinetic(offset, inertia, mass, plus[block], velocity)
+                - _body_kinetic(offset, inertia, mass, minus[block], velocity)
+            ) / (2.0 * h)
+
+        if step:
+            forward = _body_block(offset, inertia, mass, (q + step * qdot)[block]) @ velocity
+            backward = _body_block(offset, inertia, mass, (q - step * qdot)[block]) @ velocity
+            gradient[block] -= (forward - backward) / (2.0 * step)
+
+    return -gradient
+
+
+def _dynamics_block(problem: Problem):
+    dynamics = problem.model.geometry.dynamics
+    if dynamics is None:
+        raise SolverError("this model has no `dynamics:` block, so it has no mass")
+    return dynamics
+
+
+def _centre_of_mass(problem: Problem, numbers) -> np.ndarray:
+    if isinstance(numbers.com, str):
+        return np.asarray(problem.resolved.points[numbers.com], dtype=float)
+    return np.asarray(numbers.com, dtype=float)
+
+
+def _body_block(offset: np.ndarray, inertia: np.ndarray, mass: float, pose: np.ndarray) -> np.ndarray:
+    """One body's 7×7 block of `M`: translation through its centre of mass, rotation through `I`."""
+    w, x, y, z = pose[3:7]
+    jv = _point_jacobian(offset, w, x, y, z)
+    jw = np.hstack([np.zeros((3, 3)), _omega_map(w, x, y, z)])
+    return mass * (jv.T @ jv) + jw.T @ inertia @ jw
+
+
+def _body_kinetic(
+    offset: np.ndarray, inertia: np.ndarray, mass: float, pose: np.ndarray, velocity: np.ndarray
+) -> float:
+    return 0.5 * float(velocity @ _body_block(offset, inertia, mass, pose) @ velocity)
 
 
 def forces(
