@@ -882,7 +882,13 @@ sideways at the wheel centre), 41 steps: the kernel's peak heave agrees with Pyt
 at the study's own load and `1.2e-8` m at **twice** it, with the constraint at `1e-15` in both. That
 second run is the point: the load is a number the page sets, and the answer follows.
 
-**What this does not do yet: no shipped example carries a study load.** The quarter car's load is
+**The shipped example carries the load at zero.** `examples/quarter-car` now declares the corner's
+two loads with a zero force, so its trajectory is *identical* to the run before the change — checked
+entry by entry — while its kernel has the slots. That is the shape a book wants: the model's own
+answer is gravity's alone, and a page puts the corner under load deliberately. A load that shipped
+with the corner's real 3.5 kN and 1.8 kN would have moved every number §1.6 quotes.
+
+**What this does not do: the load is a page's choice, not the example's.** The quarter car's load is
 gravity, which is a property of the model rather than the study, so its kernel has no load slots at
 all and the book's table can sweep stiffness but not force. Giving it a load is a modelling change —
 the corner's own 3.5 kN and 1.8 kN — and that re-derives every number §1.6 quotes, from the 212.8 mm
