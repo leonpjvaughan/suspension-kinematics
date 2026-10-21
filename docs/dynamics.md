@@ -294,7 +294,9 @@ payload is a trajectory, not a sweep, and the book's export contract is about sw
 
 `examples/quarter-car/` is the multi-body case: a chassis on a prismatic heave, the wishbone
 hanging off it, a coil-over as a `distance` joint with `modes: {length: spring}`, and the tyre on
-a road plane. Gravity alone drives it, and `tests/test_quarter_car.py` requires the energy error to
+a road plane. Its study declares the corner's load — sideways and downwards at the wheel centre —
+**at zero**, so gravity alone drives it and every number quoted from the run is unchanged, while a
+compiled kernel copies those loads into run-time slots a page can move. and `tests/test_quarter_car.py` requires the energy error to
 fall with the step — which is what proves `C` is right, and what `check` had to learn: a dynamics
 model is *supposed* to have freedom, so the constraint set must be independent and springs are
 excluded from the rank, because in dynamics a spring is a force.

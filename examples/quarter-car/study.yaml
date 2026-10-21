@@ -1,6 +1,15 @@
 analysis: dynamics
 
-# No load and no driver: the chassis is released from the design position and gravity does the
-# work. The coil-over and the mechanism decide the motion.
+# No driver: the chassis is released from the design position and gravity does the work. The
+# coil-over and the mechanism decide the motion.
 duration: 0.5
 steps: 101
+
+# The corner's own load, at the wheel centre: sideways from a hard corner and downwards from
+# braking. **Both are zero here**, so the motion above is gravity's alone and every number the book
+# quotes from this run is unchanged — but a compiled kernel copies them into run-time slots, so a
+# page can put the corner under load and watch where it sits. They are two loads rather than one
+# because a figure wants to move them one at a time.
+loads:
+  - {site: wc, force: [0, 0, 0], law: {kind: constant}}
+  - {site: wc, force: [0, 0, 0], law: {kind: constant}}

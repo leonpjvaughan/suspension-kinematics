@@ -278,11 +278,11 @@ import kernel from './kernel.js';
 const ref = JSON.parse(await readFile('./reference.json'));
 await kernel.ready();
 const out = {};
-for (const [name, scale] of Object.entries(ref.loads)) {
+for (const [name, load] of Object.entries(ref.loads)) {
   kernel.setGeometry({ points: ref.points, axes: ref.axes, numbers: ref.numbers });
-  // The kernel starts from the model's own loads; this is the override a page would use.
-  const defaults = kernel.manifest.loads.map((load) => load.force).flat();
-  if (scale !== 1) kernel.setLoads(defaults.map((value) => value * scale));
+  // The kernel starts from the model's own loads — zero here — and this is the override a page
+  // would use: three numbers per load, in the model's order.
+  kernel.setLoads(load);
   kernel.design();
   kernel.setVelocity(new Array(kernel.manifest.layout.sizes.q).fill(0));
   const worst = kernel.integrate(ref.steps);
@@ -295,23 +295,15 @@ await writeFile('./loaded.json', JSON.stringify(out));
 
 @pytest.fixture(scope="module")
 def loaded_kernel(tmp_path_factory):
-    """A corner that carries its own load, so the load slots are exercised.
+    """The shipped quarter car, whose study declares the corner's load at zero.
 
-    The quarter car ships without one — gravity is its load — so the shipped examples never touch
-    the load buffer. This builds the same model with the corner's load in the study.
+    So the model's own numbers are gravity's alone — and the kernel still carries the load slots,
+    which is what lets a page put the corner under load.
     """
-    from otkd.problem import dynamics
     from otkd.problem.compile import Problem
 
     root = tmp_path_factory.mktemp("wasm-loaded")
-    model_root = build(root, "quarter-car", steps=41)
-    study = yaml.safe_load((model_root / "study.yaml").read_text())
-    study["loads"] = [
-        {"site": "wc", "force": [0, 0, -3500], "law": {"kind": "constant"}},
-        {"site": "wc", "force": [1800, 0, 0], "law": {"kind": "constant"}},
-    ]
-    (model_root / "study.yaml").write_text(yaml.safe_dump(study, sort_keys=False))
-    model = otkd.load(model_root)
+    model = otkd.load(build(root, "quarter-car", steps=41))
     problem = Problem(model)
     out = root / "kernel"
     written = emit_wasm(model, out)
@@ -321,6 +313,7 @@ def loaded_kernel(tmp_path_factory):
         pytest.skip("node is not installed: cannot run the module")
     manifest = json.loads((out / "kernel.json").read_text())
     assert len(manifest["loads"]) == 2
+    assert all(force == [0.0, 0.0, 0.0] for force in (load["force"] for load in manifest["loads"]))
     (out / "reference.json").write_text(
         json.dumps(
             {
@@ -329,7 +322,13 @@ def loaded_kernel(tmp_path_factory):
                 "numbers": manifest["default_numbers"],
                 "steps": manifest["integration"]["steps"],
                 "start": problem._qstart["chassis"],
-                "loads": {"default": 1, "twice the corner load": 2},
+                # Zero is the model; a corner under load is the page's choice.
+                # Three numbers per load, in the model's own load order: the model is zero.
+                "loads": {
+                    "default": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    "3 kN sideways": [3000.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    "-3.5 kN down": [0.0, 0.0, -3500.0, 0.0, 0.0, 0.0],
+                },
             }
         )
     )
@@ -340,19 +339,27 @@ def loaded_kernel(tmp_path_factory):
     return json.loads((out / "loaded.json").read_text()), problem, manifest
 
 
-@pytest.mark.parametrize("case,scale", [("default", 1.0), ("twice the corner load", 2.0)])
-def test_the_kernel_takes_its_loads_at_run_time(loaded_kernel, case, scale):
+LOAD_CASES = {
+    "default": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "3 kN sideways": [3000.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "-3.5 kN down": [0.0, 0.0, -3500.0, 0.0, 0.0, 0.0],
+}
+
+
+@pytest.mark.parametrize("case", list(LOAD_CASES))
+def test_the_kernel_takes_its_loads_at_run_time(loaded_kernel, case):
     """A load's direction is the model's; its magnitude is a number a page sets."""
     from otkd.problem import dynamics
 
     results, problem, manifest = loaded_kernel
+    values = LOAD_CASES[case]
     loads = [
         (
             problem.resolved.point_body[problem.topology.sites[load.site].origin],
             problem.topology.sites[load.site].origin,
-            np.asarray(load.force, dtype=float) * scale,
+            np.array(values[3 * index : 3 * index + 3], dtype=float),
         )
-        for load in problem.model.study.loads
+        for index, load in enumerate(problem.model.study.loads)
     ]
     trajectory = dynamics.integrate(
         problem,
