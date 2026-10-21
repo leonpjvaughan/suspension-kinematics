@@ -1,6 +1,6 @@
 # Handoff from `maths-site`: what the book cannot say yet
 
-> **Answered, 2026-10-21, against `otkd` 0.7.0.**
+> **Answered, 2026-10-21, against `otkd` 0.11.0.**
 >
 > **Request 2 — a step shaped like a frame, and a witnessed model.** Met in 0.5.0: `solve --json`
 > writes, per step, the fields a sweep frame carries (`camber`, `toe`, `ic`, `rc`, `track`,
@@ -27,11 +27,20 @@
 > queue asked for it, `otkd check` prints the diagnosis, and a payload field with no reader is a
 > wish. It can return with an item.
 >
+> **Since the request was written**, in order: 0.8.0 compiled an **integrator** for a dynamics study
+> — RK4 with a projection after every step, agreeing with Python to `1.8e-8` on the poses and
+> `5.4e-8` on the energy — so §1.6's table re-integrates the corner in the page. 0.9.0 published
+> `default_geometry` and fixed `design()`, which had been resetting only the rotations: a page that
+> integrates and then re-runs used to start where the last run stopped. 0.10.0 made a load's
+> **magnitude** a run-time slot beside the geometry numbers, so a control can move a force as well as
+> a stiffness. 0.11.0 gave the quarter car's study the corner's two loads **at zero** — the example's
+> own answer stays gravity's alone, and the page puts the corner under load deliberately.
+>
 > **Governance.** The package's own numbers are the source, not the page's rounding; where they
 > disagree, the page changes. A package tuned to a figure cannot then be evidence for it.
 
 **From:** `open-textbook.org` (`maths-site`), which vendors your bundle
-**At:** `otkd` 0.4.0 (commit `f5d2c92`), 2026-10-19, when it was written; **answered against 0.7.0**
+**At:** `otkd` 0.4.0 (commit `f5d2c92`), 2026-10-19, when it was written; **answered against 0.11.0**
 on 2026-10-21 — see the box above, which is the current state of every request below.
 **Status:** requests, with the measurements that justify each. Nothing here is a bug report
 unless it says so.
