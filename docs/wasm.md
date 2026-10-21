@@ -226,15 +226,20 @@ dependency, and not a second build.
 ### This repository: one zip per tag
 
 ```console
-$ uv run python scripts/build_release.py --version 0.1.0 --out dist
-  double-wishbone              payload out.js   kernel kernel.wasm
-  double-wishbone-compliant    payload out.js   kernel not compiled: … 'equilibrium' …
-  double-wishbone-two-leg      payload out.js   kernel not compiled: … 'redundant' …
-  ride-height                  payload out.js   kernel kernel.wasm
+$ uv run python scripts/build_release.py --version 0.11.0 --out dist
+  double-wishbone              payload out.js              kernel kernel.wasm
+  double-wishbone-compliant    payload out.js              kernel kernel.wasm
+  double-wishbone-two-leg      payload out.js              kernel kernel.wasm
+  double-wishbone-ubj          payload out.js              kernel kernel.wasm
+  quarter-car                  payload none (dynamics)     kernel kernel.wasm
+  ride-height                  payload out.js              kernel kernel.wasm
 
-dist/otkd-0.1.0.zip  299 KB
-sha256 2541a4b3…
+dist/otkd-0.11.0.zip  900 KB
+sha256 40d6f315…
 ```
+
+Five pose solvers and one integrator: the compliant and the redundant models compile now, and a
+dynamics model has no payload because a trajectory is not a sweep.
 
 `.github/workflows/release.yml` runs that on every push to `main` that warrants a release: the
 version is decided from the Conventional Commits, applied as a tag only once the artefacts exist,
@@ -260,7 +265,8 @@ otkd-0.1.0/
   models/double-wishbone/kernel/source/*.yaml   the same four, beside the artefact they made
   models/ride-height/…
   models/double-wishbone-two-leg/…              every model the emitter supports, with a kernel
-  models/quarter-car/                           neither: a dynamics study has no compiled solver
+  models/quarter-car/kernel/                    an integrator, and no `out.js`: a trajectory is
+                                                not a sweep, so there is no payload to publish
 ```
 
 The manifest says *why* a kernel is missing rather than leaving a hole, so a consumer sees the
